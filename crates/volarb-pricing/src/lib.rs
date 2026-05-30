@@ -1,2 +1,25 @@
-//! volarb-pricing — SVI fitting + Black-Scholes binary inversion (spec §3.2).
-//! Zero IO; fully unit-testable. TODO #5: Gatheral fitter (nlopt COBYLA) + `SVISurface::sigma_at`.
+//! volarb-pricing — L1 float-domain pricing: Black-Scholes binary inversion (HL leg) and the
+//! Zeliade quasi-explicit SVI fitter. Zero IO; fully unit-testable. (L0 chain-parity + L3 parity
+//! harness land in Plan B.) Design: `docs/specs/2026-05-30-volarb-pricing-svi-fitter-design.md`.
+
+pub mod binary;
+pub mod svi_fit;
+
+// NOTE: `pub use svi_fit::fit_smile;` is added in Task 5 once `fit_smile` exists — adding it here
+// would break compilation for Tasks 2–4.
+
+use thiserror::Error;
+
+/// Errors from the pure pricing layer. (Pricing has no venue IO, so no `VenueError` here —
+/// that is the venue-trait boundary, ADR-003.)
+#[derive(Debug, Error, PartialEq)]
+pub enum PricingError {
+    #[error("need at least 3 observations to fit a smile, got {0}")]
+    TooFewPoints(usize),
+    #[error("fit did not converge")]
+    NonConvergent,
+    #[error("degenerate input: {reason}")]
+    Degenerate { reason: &'static str },
+    #[error("invalid input: {reason}")]
+    InvalidInput { reason: &'static str },
+}
