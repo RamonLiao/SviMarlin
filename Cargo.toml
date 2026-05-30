@@ -1,0 +1,26 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+edition = "2024"
+version = "0.1.0"
+license = "MIT"
+
+[workspace.dependencies]
+# external
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tokio = { version = "1", features = ["full"] }
+async-trait = "0.1"
+# internal (path deps — this is the architecture boundary, spec §3.1)
+volarb-core = { path = "crates/volarb-core" }
+volarb-pricing = { path = "crates/volarb-pricing" }
+volarb-venues = { path = "crates/volarb-venues" }
+volarb-risk = { path = "crates/volarb-risk" }
+volarb-router = { path = "crates/volarb-router" }
+volarb-sui = { path = "crates/volarb-sui" }
+volarb-indexer = { path = "crates/volarb-indexer" }
+volarb-executor = { path = "crates/volarb-executor" }
+volarb-rpc = { path = "crates/volarb-rpc" }
