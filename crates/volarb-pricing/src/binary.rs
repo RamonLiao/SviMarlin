@@ -20,6 +20,56 @@ pub fn binary_price(forward: f64, strike: f64, t_years: f64, sigma: f64) -> f64 
     norm_cdf(d2)
 }
 
+/// Bisect for sigma on `[lo, hi]` where `binary_price(.., sigma) - target` is monotone and
+/// brackets a root. Returns `None` if not bracketed.
+fn bisect_sigma(target: f64, forward: f64, strike: f64, t: f64, mut lo: f64, mut hi: f64) -> Option<f64> {
+    let g = |s: f64| binary_price(forward, strike, t, s) - target;
+    let (mut glo, ghi) = (g(lo), g(hi));
+    if glo.abs() < 1e-12 { return Some(lo); }
+    if ghi.abs() < 1e-12 { return Some(hi); }
+    if glo * ghi > 0.0 { return None; }
+    for _ in 0..200 {
+        let mid = 0.5 * (lo + hi);
+        let gm = g(mid);
+        if gm.abs() < 1e-12 || (hi - lo) < 1e-12 {
+            return Some(mid);
+        }
+        if glo * gm < 0.0 {
+            hi = mid;
+        } else {
+            lo = mid;
+            glo = gm;
+        }
+    }
+    Some(0.5 * (lo + hi))
+}
+
+/// Recover Black-Scholes implied vol from a binary-call price `p` in (0, 1).
+///
+/// A digital's vega changes sign, so price-vs-sigma is non-monotone for out-of-the-money calls
+/// (`F < K`): it rises to a peak `p_max` at `sigma* = sqrt(2*ln(K/F)/T)` then falls, giving 0 or
+/// 2 solutions. We return the **lower-vol branch** (`sigma <= sigma*`) and `None` when the target
+/// exceeds `p_max` (unreachable on that branch). For `F >= K` price is monotone-decreasing in
+/// sigma and the solution is unique. Returns `None` on out-of-range / degenerate inputs.
+pub fn implied_vol_from_binary(p: f64, forward: f64, strike: f64, t_years: f64) -> Option<f64> {
+    if !(p > 0.0 && p < 1.0) || t_years <= 0.0 || forward <= 0.0 || strike <= 0.0 {
+        return None;
+    }
+    let c = (forward / strike).ln();
+    let lo = 1e-6;
+    if c >= 0.0 {
+        // monotone decreasing in sigma; price -> ~1 at lo, -> ~0 at 50.0
+        bisect_sigma(p, forward, strike, t_years, lo, 50.0)
+    } else {
+        let sigma_star = (2.0 * (-c) / t_years).sqrt();
+        let p_max = binary_price(forward, strike, t_years, sigma_star);
+        if p > p_max {
+            return None;
+        }
+        bisect_sigma(p, forward, strike, t_years, lo, sigma_star)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -41,5 +91,42 @@ mod tests {
         assert!(binary_price(100.0, 100.0, 0.0, 0.8).is_nan());
         assert!(binary_price(100.0, 100.0, 0.25, 0.0).is_nan());
         assert!(binary_price(0.0, 100.0, 0.25, 0.8).is_nan());
+    }
+
+    // WHY: round-trip is the contract — a vol priced and then recovered must come back. ATM
+    // (F == K, monotone branch) pins the happy path.
+    #[test]
+    fn inversion_roundtrips_atm() {
+        let sigma = 0.8;
+        let p = binary_price(100.0, 100.0, 0.25, sigma);
+        let recovered = implied_vol_from_binary(p, 100.0, 100.0, 0.25).expect("invertible");
+        assert!((recovered - sigma).abs() < 1e-4, "got {recovered}");
+    }
+
+    // WHY: in-the-money (F > K) is monotone — recovery must be unique and exact.
+    #[test]
+    fn inversion_roundtrips_itm() {
+        let sigma = 0.5;
+        let p = binary_price(110.0, 100.0, 0.25, sigma);
+        let recovered = implied_vol_from_binary(p, 110.0, 100.0, 0.25).expect("invertible");
+        assert!((recovered - sigma).abs() < 1e-4, "got {recovered}");
+    }
+
+    // WHY: out-of-the-money digitals have a max price; a target above it has NO real vol. We must
+    // return None, not a bogus root — trading on a fabricated IV is the failure we're preventing.
+    #[test]
+    fn inversion_above_otm_max_returns_none() {
+        // F < K (OTM): peak price p_max < 0.5; ask for something above it.
+        let sigma_star = (2.0 * (100.0_f64 / 90.0).ln() / 0.25).sqrt();
+        let p_max = binary_price(90.0, 100.0, 0.25, sigma_star);
+        assert!(implied_vol_from_binary(p_max + 0.05, 90.0, 100.0, 0.25).is_none());
+    }
+
+    // WHY: out-of-range / degenerate prices must yield None, never panic.
+    #[test]
+    fn inversion_boundary_inputs_return_none() {
+        assert!(implied_vol_from_binary(0.0, 100.0, 100.0, 0.25).is_none());
+        assert!(implied_vol_from_binary(1.0, 100.0, 100.0, 0.25).is_none());
+        assert!(implied_vol_from_binary(0.5, 100.0, 100.0, 0.0).is_none());
     }
 }
