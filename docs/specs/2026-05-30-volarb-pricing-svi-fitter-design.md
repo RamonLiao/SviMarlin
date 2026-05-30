@@ -52,7 +52,7 @@ volarb-core (no new deps)            volarb-pricing → depends on volarb-core
     is_stale(now_ms, max_age_ms)       svi_fit.rs   : L1 — Zeliade two-layer fit
                                        tests/parity.rs + fixtures/ : L3 — golden-vector parity
 ```
-New deps (all pure-Rust, zero C build — matters for later TEE/container cross-compile): `cobyla`, `nalgebra`, `statrs`, `thiserror` (workspace).
+New deps (all pure-Rust, zero C build — matters for later TEE/container cross-compile): `statrs` (normal CDF) + `thiserror` (workspace). The Zeliade optimizer is **hand-rolled** (2D Nelder-Mead outer + closed-form 3×3 normal-equations inner with feasibility projection) — dependency-light and avoids guessing a third-party optimizer's API (lessons.md). Exact constrained inner (active-set) is a documented upgrade if the projection variant misses the no-arb/robustness tests.
 
 ## 3. Core changes (`volarb-core`) — L1 eval
 
