@@ -1,145 +1,170 @@
-# Design — `volarb-pricing` SVI Fitter + core `sigma_at` (TODO #5)
+# Design — `volarb-pricing`: Layered Pricing Engine (TODO #5)
 
 > Date: 2026-05-30
-> Scope: Implement `volarb-pricing` (Black-Scholes binary inversion + Zeliade quasi-explicit SVI fit) and fill the deferred `SVISurface::sigma_at` evaluation in `volarb-core`.
-> Parent spec: `docs/specs/2026-05-28-vol-arb-bot-spec.md` §3.2 / §4 (line 209: Gatheral raw SVI, no-arb constraints, <10ms / 50-point smile).
+> Scope: A GTM-grade off-chain pricing engine for the arb bot — on-chain price parity (L0), SVI surface + Zeliade fit (L1), and a chain-parity harness (L3). Fills core `SVISurface::sigma_at`.
+> Parent spec: `docs/specs/2026-05-28-vol-arb-bot-spec.md` §3.2 / §4.
+> On-chain ground truth: Predict pkg `0xf5ea2b3749c65d6e56507cc35388719aadb28f9cab873696a2f8687f5c785138` (testnet, Immutable), modules `oracle` / `math` / `i64` / `pricing_config` — ABI pulled & verified 2026-05-30 (see §7).
 > Status: Approved (brainstorming), pending implementation plan.
 
-## 1. Goal & Success Criteria
+## 0. Why layered (the GTM decision)
 
-The off-chain engine must express both legs of the arb in one comparable unit (annualized implied vol). Predict's oracle hands us **raw SVI params directly** → we only need to *evaluate* σ(K,T). External venues (HL HIP-4) hand us **binary prices** → we must *invert* Black-Scholes to recover discrete vol points, then *fit* a smooth no-arb smile so the two surfaces can be compared at any strike.
+The naive design compares the two venues' **implied vols**. But the chain prices its own binaries with `oracle::compute_price` using its **own fixed-point `math` module** (`normal_cdf`/`sqrt`/`ln`/`exp`). Comparing a textbook-BS σ against a chain-derived σ folds **model basis** (fixed-point truncation, day-count, formula details) into the "edge" — for an arb bot that basis can BE the entire edge.
 
-**Success criteria (loop until all true):**
-
-1. `cargo build -p volarb-pricing` and `cargo build -p volarb-core` green.
-2. `SVISurface::sigma_at` returns evaluated annualized vol (no `todo!()`); existing core tests updated for the new signature and pass.
-3. Fitter **self-inversion** test: points generated from a known SVI smile fit back to that smile within tolerance.
-4. Fitter meets perf target: 50-point smile fit < 10 ms in release mode.
-5. Binary inversion round-trips (price → σ → price) and returns `None` on the non-invertible branch.
-6. `cargo clippy -p volarb-pricing -p volarb-core -- -D warnings` clean; `cargo fmt --check`.
-7. Monkey tests (degenerate inputs) do not panic — they return `None` / `Err`.
-
-**Non-goals:** real HL quote ingestion (TODO #6), router wiring, any IO/async (pricing stays pure), verifying the on-chain annualization convention against Predict's oracle (flagged UNVERIFIED, deferred to #6).
-
-## 2. Architecture & Crate Boundaries
-
-`eval` lives in **`volarb-core`**, not `volarb-pricing`. This is forced by the dependency DAG: `sigma_at` is a method on core's own `SVISurface`, and `volarb-pricing` depends on `volarb-core`. If eval lived in pricing, core would need to call pricing → circular dep. (This corrects the stray "eval lands in volarb-pricing" note in the §3.2 design — the *fitter* and *inversion* land in pricing; *eval* is intrinsic to the core type.)
+GTM-grade answer: don't assume the basis is small — **measure it and pin it with a test**. That is the difference between a hackathon pricer and a shippable product: anyone can compute σ; a product can *prove* its off-chain marks match the on-chain contract to N ticks. So the engine is layered, and the trade signal rides on chain-parity prices, not model vols.
 
 ```
-volarb-core   (no new deps)        volarb-pricing  → depends on volarb-core
-  svi.rs                             lib.rs   : re-exports + PricingError (thiserror)
-    Smile { params, forward }        binary.rs: BS digital price + inv_bs_binary
-    SVISurface { as_of_ms,           svi_fit.rs: Zeliade two-layer fit
-                 per_expiry }                    cobyla + nalgebra + statrs (all pure-Rust)
-    sigma_at(.., now_ms)
-    is_stale(now_ms, max_age_ms)
+L0  Parity pricer     faithful off-chain port of oracle::compute_price + math fixed-point
+                      → Predict-leg fair price, tick-parity with chain. SOURCE OF TRUTH.
+L1  Surface/analytics sigma_at eval (Predict IV) + Zeliade fit (HL smile), float domain
+                      → cross-strike interpolation + 3D IV-surface viz. Product differentiator.
+L3  Parity harness    golden vectors from chain compute_price → assert L0 within N ticks
+                      → quantifies basis, guards against chain formula drift, GTM trust story.
+---
+L2  Signal (router, TODO #6/#7, NOT this TODO): price-space edge = executable_HL − executable_Predict,
+    executable = fair ± spread (pricing_config). Uses L1 to interpolate, L0 to price.
 ```
 
-## 3. Core changes (`volarb-core`)
+**This TODO delivers L0 + L1 + L3.** No downgrade: eval + Zeliade fitter + binary inversion all ship inside L1; L0 + L3 wrap them with chain parity.
 
-### 3.1 Data model (storage struct change — high risk)
+## 1. Success Criteria (loop until all true)
+
+1. `cargo build -p volarb-pricing -p volarb-core` green; `clippy -- -D warnings` clean; `fmt --check`.
+2. **L1 eval**: `SVISurface::sigma_at` returns annualized vol (no `todo!()`); existing core tests updated for new signature and pass.
+3. **L1 fit**: self-inversion test (points from a known smile → fit → recovers it within tol); sparse 5-point + noisy cases converge and satisfy no-arb.
+4. **L1 perf**: 50-point smile fit < 10 ms (release).
+5. **L0 parity (the GTM gate)**: off-chain `predict_binary_price` matches on-chain `oracle::compute_price` within a documented tick tolerance across a strike grid (golden vectors pulled from chain). **The measured basis is recorded in the spec/test, not assumed.**
+6. **L1 inversion**: binary price→σ→price round-trips; non-monotone/boundary → `None`.
+7. **Monkey**: degenerate inputs (NaN/inf/neg σ, F=0, T=0, 1 point, all-same-strike) never panic — return `None`/`Err`.
+
+**Non-goals:** L2 router/edge logic, real HL quote ingestion, gRPC data path (all TODO #6/#7). No IO/async in pricing — golden vectors are captured to a fixtures file, the parity test reads the fixture (the RPC pull is a dev-time tool, not a crate dependency).
+
+## 2. Crate layout & boundaries
+
+`eval` lives in **`volarb-core`** (DAG-forced: `sigma_at` is a method on core's `SVISurface`; pricing depends on core, so eval can't live in pricing without a cycle). L0/L1-fit/inversion + parity live in **`volarb-pricing`**.
+
+```
+volarb-core (no new deps)            volarb-pricing → depends on volarb-core
+  svi.rs                               lib.rs       : re-exports + PricingError (thiserror)
+    Smile { params, forward }          fixedpoint.rs: faithful port of i64::I64 + math
+    SVISurface { as_of_ms,                            (normal_cdf/sqrt/ln/exp), scale from source
+                 per_expiry }          predict.rs   : L0 — port of oracle::compute_price
+    sigma_at(.., now_ms)               binary.rs    : L1 — BS digital + inv_bs_binary (HL leg)
+    is_stale(now_ms, max_age_ms)       svi_fit.rs   : L1 — Zeliade two-layer fit
+                                       tests/parity.rs + fixtures/ : L3 — golden-vector parity
+```
+New deps (all pure-Rust, zero C build — matters for later TEE/container cross-compile): `cobyla`, `nalgebra`, `statrs`, `thiserror` (workspace).
+
+## 3. Core changes (`volarb-core`) — L1 eval
+
+### 3.1 Data model (storage struct change — high risk; mirrors chain)
 
 ```rust
-// svi.rs
-pub struct Smile { pub params: SVIParams, pub forward: f64 }   // F is snapshot data, lives WITH params
+pub struct Smile { pub params: SVIParams, pub forward: f64 }   // F lives WITH params
 pub struct SVISurface {
-    pub as_of_ms: u64,                       // §242 staleness gate ONLY — NOT used for T
+    pub as_of_ms: u64,                       // staleness gate ONLY (§242) — NOT used for T
     pub per_expiry: BTreeMap<u64, Smile>,    // expiry_ms → Smile
 }
 ```
+**This is not just best practice — it mirrors the chain.** Each on-chain `oracle::OracleSVI` object = ONE expiry, carrying its own `prices.forward`, one `svi: SVIParams`, and a `timestamp` (§7). The engine subscribes to N such objects (one per expiry) and aggregates them into one `SVISurface`; each `Smile` ← one `OracleSVI` (`svi` params + `prices.forward`), and `as_of_ms` ← the oldest constituent `OracleSVI.timestamp`. Splitting forward out of the smile would let snapshot-N params pair with snapshot-(N+1) forward — the classic vol-engine desync.
 
-Rationale (from brainstorming, production-DeFi model):
-- **Forward travels with the smile.** SVI params are meaningless without the forward they were measured against (`k = ln(K/F)`). Splitting F into a free call-site argument invites cross-snapshot desync (params from snapshot N + forward from N+1). This is the classic vol-engine footgun; production surfaces are immutable snapshots of `{params, forward}` per expiry.
-- **`as_of_ms` is for staleness, not T.** Spec §242 (`now − last_svi_update > 60s → halt`) needs the snapshot time. But time-to-expiry must be computed from a *live* clock at eval, never frozen, because the surface is re-evaluated every router tick and sub-hour T decays second-by-second.
-
-### 3.2 Evaluation
+### 3.2 Evaluation (float domain — analytics/viz, NOT the trade signal)
 
 ```rust
 impl SVISurface {
-    /// Annualized implied vol at (strike, expiry), valued at now_ms.
-    /// None if: no smile for that expiry, T ≤ 0 (expired), or w < 0 (defensive).
     pub fn sigma_at(&self, strike: Strike, expiry: Expiry, now_ms: u64) -> Option<VolPoints>;
-    /// §242 staleness gate.
-    pub fn is_stale(&self, now_ms: u64, max_age_ms: u64) -> bool;
+    pub fn is_stale(&self, now_ms: u64, max_age_ms: u64) -> bool;     // §242
 }
+// k=ln(strike/forward); w=a+b(ρ(k−m)+√((k−m)²+σ²)); T=(expiry−now)/MS_PER_YEAR; σ=√(w/T)
+// None if: no smile / T≤0 / w<0. Returns VolPoints(σ·100).
 ```
-
-Math:
-```
-k = ln(strike / forward)
-w = a + b·(ρ·(k−m) + √((k−m)² + σ²))          // Gatheral raw total variance
-T = (expiry.unix_ms − now_ms) / MS_PER_YEAR    // T ≤ 0 → None
-σ_BS = √(w / T)                                 // w < 0 → None
-return VolPoints(σ_BS · 100.0)
-```
-
-Constants / unit conventions (locked):
-- `MS_PER_YEAR = 365 * 24 * 3600 * 1000` (calendar-day annualization). **UNVERIFIED** — must match Predict oracle's annualization; flagged like §3.2 on-chain precision, deferred to TODO #6. Using 365 as the working assumption.
-- `VolPoints` carries annualized σ × 100 (e.g. `VolPoints(80.0)` = 80% vol). eval and fit agree on this unit.
+- `MS_PER_YEAR = 365*24*3600*1000` — **the day-count used by L1 eval for display**. The *authoritative* day-count is whatever `oracle::compute_price` uses on-chain; L0 mirrors that, and L3 measures any gap. So this constant is a display convention, no longer a blocking UNVERIFIED — L3 quantifies its effect.
+- `VolPoints` = annualized σ × 100 (80.0 = 80% vol). eval & fit agree.
 
 ### 3.3 Test fallout
-
-The signature change touches two existing tests (call sites only):
-- `sigma_at_absent_expiry_returns_none_without_panicking` → add `now_ms` arg.
-- `serde_roundtrip` → construct `SVISurface` with `as_of_ms` + `Smile { params, forward }`.
+Signature change touches two existing core tests (call sites): `sigma_at_absent_expiry_*` (+`now_ms`), `serde_roundtrip` (+`as_of_ms`, `Smile{params,forward}`).
 
 ## 4. `volarb-pricing`
 
-### 4.1 `binary.rs` — Black-Scholes digital + inversion
+### 4.1 L0 — `fixedpoint.rs` + `predict.rs` (chain parity)
 
-Cash-or-nothing binary call, r ≈ 0 (crypto, sub-hour), priced off forward F:
-```
-d2 = (ln(F/K) − σ²T/2) / (σ√T)
-p  = N(d2)                                  // N = standard normal CDF (statrs)
-```
+**The thing that makes this GTM-grade.** Faithful off-chain port of the chain's pricing so the Predict leg is priced locally (no per-tick RPC latency) but provably tick-consistent with the contract.
+
+- `fixedpoint.rs`: port `i64::I64` (sign-magnitude: `from_parts`/`magnitude`/`is_negative`/`*_scaled`) and `math` (`normal_cdf`, `sqrt(value,scale)`, `ln`, `exp`) at the **same fixed-point scale as on-chain**.
+- `predict.rs`: `predict_binary_price(svi: &SVIParams, forward: u64, strike: u64, t: ...) -> u64`, a port of `oracle::compute_price` / `binary_price_pair`.
+- **Source of truth = the Move source, not a guess.** Pull `math` / `oracle` / `i64` source via `sui-decompile` (per lessons.md: don't assume on-chain formulas/constants — read them). The SCALE constant and the exact `compute_price` formula come from that source. This is the bulk of the new work and the reason #5 grew.
+- L0 operates in the chain's integer fixed-point (U64/I64), NOT f64 — that's how parity is achievable.
+
+### 4.2 L1 — `binary.rs` (HL leg inversion)
+
+Cash-or-nothing binary call, r≈0, off forward: `d2=(ln(F/K)−σ²T/2)/(σ√T)`, `p=N(d2)`.
 ```rust
-pub fn binary_price(forward: f64, strike: f64, t_years: f64, sigma: f64) -> f64;
-pub fn implied_vol_from_binary(p: f64, forward: f64, strike: f64, t_years: f64) -> Option<f64>;
+pub fn binary_price(forward, strike, t_years, sigma) -> f64;          // float BS (HL leg / surface)
+pub fn implied_vol_from_binary(p, forward, strike, t_years) -> Option<f64>;  // Brent root-find
 ```
-- Inversion: Brent 1D root-find on σ. `binary.rs` works in **raw σ (`f64`)**, unit-agnostic; conversion to `VolPoints` (σ×100) happens at the call boundary that feeds `fit_smile` (wired in TODO #6).
-- ⚠️ A digital's vega changes sign → `p(σ)` is **non-monotonic** (0 or 2 solutions). Solve only on the monotone branch; boundary cases (`p → 0/1`, deep ITM/OTM, `T ≤ 0`) return `None`. Document the chosen branch.
+`binary.rs` is **raw σ (f64)**, unit-agnostic; →`VolPoints` conversion at the call boundary (#6). ⚠️ Digital vega changes sign → `p(σ)` non-monotone (0/2 solutions); solve on the monotone branch only, boundary (`p→0/1`, deep ITM/OTM, `T≤0`) → `None`. (This is the HL→surface path; it is **not** on the trade-signal critical path, so its fragility is contained.)
 
-### 4.2 `svi_fit.rs` — Zeliade quasi-explicit fit
+### 4.3 L1 — `svi_fit.rs` (Zeliade quasi-explicit)
 
 ```rust
-pub fn fit_smile(
-    forward: f64,
-    expiry: Expiry,
-    now_ms: u64,
-    observations: &[(Strike, VolPoints)],   // market (strike, σ) points
-) -> Result<Smile, PricingError>;
+pub fn fit_smile(forward, expiry, now_ms, observations: &[(Strike, VolPoints)]) -> Result<Smile, PricingError>;
 ```
-Algorithm:
-1. Convert observations to `(kᵢ, wᵢ)`: `kᵢ = ln(strike/F)`, `wᵢ = (σᵢ/100)²·T`.
-2. **Outer** (2D, non-linear): minimize fit residual over `(m, σ)` with `σ > 0`, using `cobyla` (pure-Rust derivative-free).
-3. **Inner** (3-var, linear, per outer step): change of variables `y=(k−m)/σ`, `c=bσ`, `d=ρbσ` makes total variance **linear**: `w = a + d·y + c·√(y²+1)`. Solve constrained linear least-squares for `(a, c, d)` via `nalgebra` normal equations + active-set over the polytope:
-   `0 ≤ c ≤ 4σ`, `|d| ≤ c`, `|d| ≤ 4σ − c`, `0 ≤ a ≤ max(wᵢ)`. These constraints guarantee butterfly no-arb by construction.
-4. Back-transform: `b = c/σ`, `ρ = d/c` (ρ=0 if c=0), `(a, m, σ)` as-is → `SVIParams`. Wrap in `Smile { params, forward }`.
-5. `< 3` observations / degenerate / non-convergent → `Err(PricingError)`.
+1. Observations → `(kᵢ,wᵢ)`: `kᵢ=ln(strike/F)`, `wᵢ=(σᵢ/100)²·T`.
+2. **Outer** (2D non-linear): minimize residual over `(m,σ)`, `σ>0`, via `cobyla`.
+3. **Inner** (linear, per outer step): substitution `y=(k−m)/σ`, `c=bσ`, `d=ρbσ` ⇒ `w=a+d·y+c·√(y²+1)` is **linear** in `(a,c,d)`. Constrained linear LS via `nalgebra` normal equations + active-set on the polytope `0≤c≤4σ, |d|≤c, |d|≤4σ−c, 0≤a≤max(wᵢ)` — these guarantee butterfly no-arb by construction.
+4. Back-transform `b=c/σ, ρ=d/c (0 if c=0), (a,m,σ)` → `SVIParams` → `Smile{params,forward}`.
+5. `<3` points / degenerate / non-convergent → `Err(PricingError)`.
 
-Dependencies (all pure-Rust, zero C build deps — matters for later TEE/container cross-compile): `cobyla = "1"`, `nalgebra` (workspace-pinned), `statrs`, `thiserror` (workspace).
+> Zeliade over direct 5-param COBYLA: ~5–15 strikes per sub-hour binary expiry makes a direct 5-param fit ill-posed (flat/multi-modal landscape). Collapsing 3 params to a closed-form inner solve leaves 2 genuinely non-linear params → robust under sparse/noisy quotes. Production vol-desk standard (Zeliade Systems, "Quasi-Explicit Calibration of Gatheral's SVI model").
 
-> Why Zeliade over direct 5-param COBYLA: with only ~5–15 strikes per sub-hour binary expiry, a direct 5-param fit is ill-posed (known flat/multi-modal landscape). Zeliade collapses 3 of the 5 params to a closed-form inner linear solve, leaving only 2 genuinely non-linear params — robust under sparse/noisy quotes, which is exactly the HL case. This is the production vol-desk standard (Zeliade Systems, "Quasi-Explicit Calibration of Gatheral's SVI model").
+### 4.4 `PricingError` (thiserror)
+Pure crate (no `VenueError` — that's the venue-trait boundary, ADR-003). Variants: `TooFewPoints`, `NonConvergent`, `Degenerate{reason}`, `InvalidInput{reason}`, `ParityScaleUnknown`.
 
-### 4.3 `PricingError` (thiserror)
+## 5. L3 — Parity harness (`tests/parity.rs` + `fixtures/`)
 
-Pricing is pure (no `VenueError`, which is the venue-trait boundary per ADR-003). Variants: `TooFewPoints`, `NonConvergent`, `Degenerate { reason }`, `InvalidInput { reason }`.
+The GTM gate. A dev-time tool pulls golden vectors from chain (`sui_getNormalizedMoveModule` for ABI + a devInspect/read of `oracle::compute_price` across a strike grid for a live `OracleSVI`) and writes them to `fixtures/compute_price_golden.json`. The committed test reads the fixture (no network in `cargo test`) and asserts:
 
-## 5. Testing (Rule 9 — encode WHY; test.md — monkey)
+```
+for (strike, chain_price) in golden:
+    assert |predict_binary_price(svi, forward, strike, t) − chain_price| ≤ TICK_TOL
+```
+- `TICK_TOL` is **recorded as the measured basis**, not assumed. If L0 is a faithful integer port, expect 0–1 tick.
+- Also a property test: L0 monotonic/bounded where the chain is.
+- Drift guard: re-running the puller later catches a chain formula change.
 
-- **eval**: hand-computed σ for known params at a few k; assert `T ≤ 0 → None`. *Why:* eval is the money-path formula both legs share.
-- **fitter self-inversion (gold test)**: generate `(strike, σ)` points from a known `Smile` → `fit_smile` → recovered params reproduce the smile within tol. *Why:* a fitter that can't invert its own forward model is wrong regardless of how it looks on real data.
-- **fitter sparse**: 5-point case still converges to a sane smile. *Why:* this is the real HL regime.
-- **fitter robustness**: points + noise → fit residual bounded; assert fitted params satisfy no-arb. *Why:* sparse + noisy is the failure mode Zeliade exists to handle.
-- **binary round-trip**: `price → invert → price` within tol; non-monotone/no-solution → `None`; boundary `p→0/1`.
-- **perf**: 50-point fit < 10 ms (release). *Why:* hard spec target (§3.2 line 209).
-- **monkey**: all-same-strike, 1 point, NaN/inf σ, negative σ, `F = 0`, `T = 0` → `None`/`Err`, never panic.
+## 6. Testing (Rule 9 — encode WHY; test.md — monkey)
 
-## 6. Risk flags (carried into implementation)
+- **L1 eval**: hand-computed σ for known params; `T≤0→None`. *Why:* shared money-path formula.
+- **L1 fit self-inversion (gold)**: known smile → fit → recovered within tol. *Why:* a fitter that can't invert its own forward model is wrong regardless of real-data look.
+- **L1 fit sparse(5)/noisy**: converges, residual bounded, no-arb holds. *Why:* the real HL regime — Zeliade's reason to exist.
+- **L1 binary**: round-trip; non-monotone/boundary→None.
+- **L0 parity (gold)**: §5. *Why:* the trade signal trusts L0; basis must be measured, not hoped.
+- **L1 perf**: 50-pt fit <10ms release. *Why:* hard target (§3.2 line 209).
+- **Monkey**: all-same-strike, 1 pt, NaN/inf/neg σ, F=0, T=0 → None/Err, never panic.
+
+## 7. On-chain ABI (verified 2026-05-30, pkg `0xf5ea…5138`)
+
+```
+oracle::OracleSVI { id, authorized_caps, underlying_asset:String, expiry:U64, active:Bool,
+  prices: PriceData{spot:U64, forward:U64}, svi: SVIParams{a:U64,b:U64,rho:i64::I64,m:i64::I64,sigma:U64},
+  timestamp:U64, settlement_price:Option<U64> }                         // one object = one expiry
+oracle::compute_price(&OracleSVI, strike:U64) -> U64                     // fair binary price from SVI
+oracle::binary_price_pair(&OracleSVI, strike:U64, &Clock) -> (U64,U64)   // uses Clock for T
+oracle::{forward_price,spot_price,svi_a,svi_b,svi_m,svi_rho,svi_sigma,timestamp,expiry} -> accessors
+oracle::OracleSVIUpdated { oracle_id, a:U64, b:U64, rho:I64, m:I64, sigma:U64, timestamp:U64 }  // event
+math::{ normal_cdf(&I64)->U64, sqrt(U64,U64)->U64, ln(U64)->I64, exp(&I64)->U64, mul_div_round_* }
+i64::{ from_parts, from_u64, magnitude, is_negative, is_zero, neg, add, sub, mul_scaled, div_scaled, square_scaled }
+pricing_config::{ base_spread, min_spread, quote_spread_from_fair_price, min_ask_price, max_ask_price, utilization_multiplier }
+```
+
+## 8. Risk flags (carried into implementation)
 
 | Risk | Disposition |
 |------|-------------|
-| `MS_PER_YEAR` annualization convention | UNVERIFIED vs Predict oracle; working assumption 365-day; re-verify in TODO #6. |
-| Digital price non-monotone in σ | Known math trap; Brent on monotone branch only; `None` outside; covered by tests. |
-| Zeliade inner active-set | Hardest math in this TODO; plan splits it into its own TDD step before wiring the outer loop. |
-| Core storage struct change | High-risk (storage shape). Confined to `Smile`/`SVISurface`; downstream skeletons don't yet read these fields, so blast radius = the 2 core tests. |
+| L0 fixed-point fidelity (SCALE, exact `compute_price` formula) | **Read from decompiled `math`/`oracle` source** (sui-decompile), do NOT assume. L3 parity test is the acceptance gate. Hardest+largest part of this TODO. |
+| `i64::I64` decode (sign-magnitude, scaled) | Port `from_parts`/`magnitude`/`is_negative`/`*_scaled` faithfully; unit-test against on-chain accessor outputs. |
+| Digital price non-monotone in σ (L1) | Brent on monotone branch; `None` outside; contained off the trade-signal path. |
+| Zeliade inner active-set | Hardest L1 math; plan isolates it as its own TDD step. |
+| `MS_PER_YEAR` (L1 display day-count) | Display convention; authoritative day-count is L0/chain; L3 measures the gap. Downgraded from blocking. |
+| Executable price includes spread (`pricing_config`) | L2/router scope (#6/#7): edge must net out Predict spread + HL fee. Flagged, not built here. |
+| Core storage struct change | Confined to `Smile`/`SVISurface`; downstream skeletons don't read these yet → blast radius = 2 core tests. |
+| L3 fixture freshness | Golden vectors are a point-in-time snapshot; re-pull on chain upgrade. Puller script committed under `tools/`. |
