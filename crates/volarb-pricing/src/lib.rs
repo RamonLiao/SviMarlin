@@ -5,8 +5,7 @@
 pub mod binary;
 pub mod svi_fit;
 
-// NOTE: `pub use svi_fit::fit_smile;` is added in Task 5 once `fit_smile` exists — adding it here
-// would break compilation for Tasks 2–4.
+pub use svi_fit::fit_smile;
 
 use thiserror::Error;
 
