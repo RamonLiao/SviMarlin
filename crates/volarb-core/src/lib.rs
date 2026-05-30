@@ -9,7 +9,7 @@ pub use numeric::{Expiry, Strike, UsdcAmount, VolPoints};
 
 pub mod svi;
 
-pub use svi::{SVIParams, SVISurface};
+pub use svi::{MS_PER_YEAR, SVIParams, SVISurface, Smile};
 
 pub mod market;
 pub mod position;
