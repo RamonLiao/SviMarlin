@@ -1,0 +1,12 @@
+[package]
+name = "volarb-bin"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+
+[dependencies]
+volarb-core.workspace = true
+volarb-pricing.workspace = true
+volarb-router.workspace = true
+volarb-risk.workspace = true
+volarb-executor.workspace = true
