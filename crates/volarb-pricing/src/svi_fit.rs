@@ -1,5 +1,5 @@
 //! Zeliade quasi-explicit SVI fit (design §4.3). Outer: 2D Nelder-Mead over (m, sigma). Inner:
-//! closed-form 3x3 normal-equations solve over (a, c, d) for the linearized total variance
+//! closed-form 3x3 normal-equations solve over (a, d, c) for the linearized total variance
 //! `w = a + d*y + c*sqrt(y^2+1)`, `y = (k-m)/sigma`, then feasibility projection onto the no-arb
 //! polytope. Back-transform: `b = c/sigma`, `rho = d/c`.
 
@@ -230,7 +230,11 @@ fn nelder_mead_2d<F: Fn([f64; 2]) -> f64>(f: F, start: [f64; 2], iters: usize) -
         }
     }
     let best = (0..3)
-        .min_by(|&i, &j| fv[i].partial_cmp(&fv[j]).unwrap())
+        .min_by(|&i, &j| {
+            fv[i]
+                .partial_cmp(&fv[j])
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })
         .unwrap();
     simplex[best]
 }
