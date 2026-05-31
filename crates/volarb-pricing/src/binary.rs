@@ -65,7 +65,15 @@ fn bisect_sigma(
 /// exceeds `p_max` (unreachable on that branch). For `F >= K` price is monotone-decreasing in
 /// sigma and the solution is unique. Returns `None` on out-of-range / degenerate inputs.
 pub fn implied_vol_from_binary(p: f64, forward: f64, strike: f64, t_years: f64) -> Option<f64> {
-    if !(p > 0.0 && p < 1.0) || t_years <= 0.0 || forward <= 0.0 || strike <= 0.0 {
+    if !(p > 0.0
+        && p < 1.0
+        && t_years.is_finite()
+        && t_years > 0.0
+        && forward.is_finite()
+        && forward > 0.0
+        && strike.is_finite()
+        && strike > 0.0)
+    {
         return None;
     }
     let c = (forward / strike).ln();
@@ -164,5 +172,14 @@ mod tests {
         assert!(implied_vol_from_binary(0.0, 100.0, 100.0, 0.25).is_none());
         assert!(implied_vol_from_binary(1.0, 100.0, 100.0, 0.25).is_none());
         assert!(implied_vol_from_binary(0.5, 100.0, 100.0, 0.0).is_none());
+    }
+
+    // WHY (monkey): inversion is fed live venue prices; NaN/extreme values must yield None.
+    #[test]
+    fn monkey_inversion_never_panics() {
+        assert!(implied_vol_from_binary(f64::NAN, 100.0, 100.0, 0.25).is_none());
+        assert!(implied_vol_from_binary(0.5, f64::NAN, 100.0, 0.25).is_none());
+        assert!(implied_vol_from_binary(0.5, 100.0, 100.0, -1.0).is_none());
+        assert!(binary_price(f64::NAN, 100.0, 0.25, 0.8).is_nan());
     }
 }

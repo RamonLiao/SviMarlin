@@ -375,4 +375,55 @@ mod tests {
             PricingError::InvalidInput { .. }
         ));
     }
+
+    // WHY: <10ms for a 50-point smile is a hard spec target (design §1.4 / spec §3.2 line 209).
+    // Run in release (`cargo test --release`); debug builds are not representative.
+    #[test]
+    fn fit_50_points_under_10ms() {
+        let t = 0.25;
+        let expiry = Expiry {
+            unix_ms: (MS_PER_YEAR * t) as u64,
+        };
+        let strikes: Vec<f64> = (0..50).map(|i| 50_000.0 + i as f64 * 600.0).collect();
+        let obs = synth(&truth(), t, &strikes, &[]);
+        let start = std::time::Instant::now();
+        let _ = fit_smile(FWD, expiry, 0, &obs).expect("fit");
+        let elapsed = start.elapsed();
+        // debug builds are not representative; gate is release-only.
+        if !cfg!(debug_assertions) {
+            assert!(
+                elapsed.as_millis() < 10,
+                "50-pt fit took {elapsed:?} (target <10ms, run --release)"
+            );
+        }
+    }
+
+    // WHY (monkey): adversarial inputs must surface as None/Err, never panic. NaN/inf vol,
+    // all-identical strikes (zero moneyness spread), and zero forward are the realistic ways a
+    // bad upstream feed corrupts a fit.
+    #[test]
+    fn monkey_fit_never_panics() {
+        let expiry = Expiry { unix_ms: 1_000_000 };
+        // NaN vol
+        let nan = vec![
+            (Strike(60_000.0), VolPoints(f64::NAN)),
+            (Strike(62_000.0), VolPoints(50.0)),
+            (Strike(64_000.0), VolPoints(50.0)),
+        ];
+        assert!(fit_smile(FWD, expiry, 0, &nan).is_err());
+        // all-same strike (degenerate moneyness) — must not panic; Err or a (possibly poor) Ok.
+        let same = vec![
+            (Strike(64_000.0), VolPoints(50.0)),
+            (Strike(64_000.0), VolPoints(51.0)),
+            (Strike(64_000.0), VolPoints(49.0)),
+        ];
+        let _ = fit_smile(FWD, expiry, 0, &same); // just must not panic
+        // zero forward
+        let ok = vec![
+            (Strike(60_000.0), VolPoints(50.0)),
+            (Strike(64_000.0), VolPoints(50.0)),
+            (Strike(68_000.0), VolPoints(50.0)),
+        ];
+        assert!(fit_smile(0.0, expiry, 0, &ok).is_err());
+    }
 }
