@@ -15,6 +15,9 @@ use thiserror::Error;
 pub enum PricingError {
     #[error("need at least 3 observations to fit a smile, got {0}")]
     TooFewPoints(usize),
+    /// Defensive-only backstop: the current inner solve clamps all params to finite bounds, so a
+    /// non-finite SSE is unreachable today. Kept as the typed error path for future inner solvers
+    /// (e.g. an iterative active-set replacement) that could genuinely diverge.
     #[error("fit did not converge")]
     NonConvergent,
     #[error("degenerate input: {reason}")]

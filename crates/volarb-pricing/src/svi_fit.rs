@@ -71,6 +71,8 @@ pub fn fit_smile(
     let best = nelder_mead_2d(objective, [m0, s0], 400);
     let (m, sigma) = (best[0], best[1].abs().max(1e-6));
     let (theta, sse) = inner_solve(&pts, m, sigma, max_w);
+    // Defensive backstop: inner_solve clamps θ to finite bounds over finite pts, so sse is finite
+    // today. This guard exists for future inner solvers that could diverge (see PricingError).
     if !sse.is_finite() {
         return Err(PricingError::NonConvergent);
     }

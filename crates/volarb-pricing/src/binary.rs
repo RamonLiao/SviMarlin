@@ -10,7 +10,9 @@ fn norm_cdf(x: f64) -> f64 {
 
 /// Price of a cash-or-nothing binary call (pays 1 if terminal price > strike), under
 /// Black-Scholes with r = 0 priced off the forward `F`: `p = N(d2)`,
-/// `d2 = (ln(F/K) - 0.5*sigma^2*T) / (sigma*sqrt(T))`. Returns `NaN` on non-positive inputs.
+/// `d2 = (ln(F/K) - 0.5*sigma^2*T) / (sigma*sqrt(T))`. Non-positive inputs are rejected by the
+/// guard (returns `NaN`); non-finite inputs propagate to `NaN` by IEEE arithmetic. Callers
+/// branch on `is_nan`/`is_finite`.
 pub fn binary_price(forward: f64, strike: f64, t_years: f64, sigma: f64) -> f64 {
     if t_years <= 0.0 || sigma <= 0.0 || forward <= 0.0 || strike <= 0.0 {
         return f64::NAN;
