@@ -16,7 +16,10 @@ gate input — but **measuring that basis is Part 2**, not this part.
 
 ## Non-Goals (Part 1)
 
-- No frozen fixtures, no `sui_devInspect`, no network calls, no L3 parity harness.
+- No frozen fixtures, no `sui_devInspect`, no network calls, no L3 parity harness. **Part 2 capture
+  note:** JSON-RPC is deprecated (Quorum Driver disabled, removal ~2026-04 per SUI v1.72.2 /
+  Protocol 124) — the Part 2 fixture capture must prefer the gRPC `devInspect` equivalent and treat
+  JSON-RPC only as fallback. Recorded here so Part 2 doesn't build on a dead transport.
 - No bit-exact-to-chain assertion. Part 1 verifies **self-consistency + hand-computed golden
   values**, NOT agreement with the live chain. (Stated loudly so "tests pass" is not misread as
   "parity proven".)
@@ -77,19 +80,28 @@ pub enum OnchainError {
 }
 ```
 
-Only ops the chain gives an abort code return `Result`: the `i64` ops, `ln` (abort on `x==0`),
-`exp`, `sqrt`, and `compute_nd2`. DeepBook `mul`/`div` and `normal_cdf` have no on-chain abort in the oracle path and
-return plain `u64` (the u128 intermediate keeps them in range; a `debug_assert!` guards the cast-back
-so an out-of-range operand surfaces in tests rather than silently wrapping).
+Ops the chain gives a **custom** abort code return `Result`: the `i64` ops, `ln` (abort on `x==0`),
+`exp`, `sqrt`, and `compute_nd2`.
+
+DeepBook `mul`/`div` and `normal_cdf` have no *custom* abort code, but Move's `x as u64` cast-back
+from the u128 intermediate **aborts on overflow** (arithmetic error, no custom code) — it does NOT
+wrap. Rust's `as u64` wraps silently, which would diverge from the chain at the boundary. To stay
+faithful (and fail loud), the port uses a **checked cast-back** (`u64::try_from(..)`) on these
+helpers' return: in the oracle path operands are bounded so it never triggers, but an out-of-range
+operand surfaces as `MagnitudeOverflow` instead of a silent release-mode wrap. These helpers
+therefore return `Result<u64>` too, mirroring "Move aborts on cast overflow, oracle path proves it
+unreachable." No `as u64` truncation anywhere in the port.
 
 ## Functions (ported in dependency order)
 
 1. **`I64`**: `zero`, `from_u64`, `from_parts` (-0→+0), `neg`, `add`, `sub`,
    `mul_scaled`, `div_scaled`, `square_scaled`. u128 intermediates; integer floor division.
-2. **DeepBook `mul`/`div`** (round-DOWN floor, u128 intermediate then cast to u64). Only these two
-   DeepBook math fns are used by the oracle path.
+2. **DeepBook `mul`/`div`** → `Result<u64>` (round-DOWN floor, u128 intermediate, **checked**
+   cast-back per error-handling section — no silent `as u64` wrap). Only these two DeepBook math fns
+   are used by the oracle path.
 3. **Predict math**: `ln(u64) -> Result<I64>`, `exp(&I64) -> Result<u64>`,
-   `sqrt(a: u64, b: u64) -> Result<u64>`, `normal_cdf(&I64) -> u64`. Constants + op order verbatim.
+   `sqrt(a: u64, b: u64) -> Result<u64>`, `normal_cdf(&I64) -> Result<u64>`. Constants + op order
+   verbatim.
    - `ln`: `x==1e9 → 0`; `x<1e9 → -ln(1e18/x)`; else normalize + atanh series.
    - `exp`: `mag==0 → 1e9`; positive arg overflow guard `<= 23_638_153_699`; range-reduce by `2^k`,
      Taylor 12 terms.
@@ -100,6 +112,9 @@ so an out-of-range operand surfaces in tests rather than silently wrapping).
 4. **`compute_nd2(&OnchainOracle, k: u64) -> Result<u64>`**: the formula in findings §`compute_nd2`.
    `compute_price(&OnchainOracle, strike: u64) -> Result<u64>` (settled → strict `>` ? 1e9 : 0).
    `binary_price_pair(&OnchainOracle, strike) -> Result<(u64, u64)>` = `(up, SCALE - up)`.
+   - **Tie-break note (must appear in module doc):** settled uses strict `>` so `s == K` → UP=0,
+     i.e. **ties resolve DOWN**. This mirrors the chain and is a silent economic assumption — the
+     module doc states it explicitly so the future router doesn't misread ATM-at-settlement direction.
 
 ## Testing (offline only)
 
