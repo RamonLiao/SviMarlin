@@ -84,9 +84,48 @@ impl I64 {
     }
 }
 
-// Suppress unused warnings for Res/OnchainError variants consumed by later tasks.
-#[allow(unused)]
-fn _assert_res_used(_: Res<()>) {}
+impl I64 {
+    /// Sign-magnitude add. `abort(0)` on same-sign magnitude overflow -> MagnitudeOverflow.
+    pub fn add(&self, other: &I64) -> Res<I64> {
+        if self.is_negative == other.is_negative {
+            let mag = self
+                .magnitude
+                .checked_add(other.magnitude)
+                .ok_or(OnchainError::MagnitudeOverflow)?;
+            Ok(I64::from_parts(mag, self.is_negative))
+        } else if self.magnitude >= other.magnitude {
+            Ok(I64::from_parts(self.magnitude - other.magnitude, self.is_negative))
+        } else {
+            Ok(I64::from_parts(other.magnitude - self.magnitude, other.is_negative))
+        }
+    }
+
+    pub fn sub(&self, other: &I64) -> Res<I64> {
+        self.add(&other.neg())
+    }
+
+    /// `(a.mag * b.mag) / 1e9` in u128, checked cast back to u64; sign = xor of signs.
+    pub fn mul_scaled(&self, other: &I64) -> Res<I64> {
+        let prod = (self.magnitude as u128) * (other.magnitude as u128) / (SCALE as u128);
+        let mag = u64::try_from(prod).map_err(|_| OnchainError::MagnitudeOverflow)?;
+        Ok(I64::from_parts(mag, self.is_negative != other.is_negative))
+    }
+
+    /// `(a.mag * 1e9) / b.mag`; `abort(1)` if b.mag == 0 -> DivByZero; sign = xor.
+    pub fn div_scaled(&self, other: &I64) -> Res<I64> {
+        if other.magnitude == 0 {
+            return Err(OnchainError::DivByZero);
+        }
+        let q = (self.magnitude as u128) * (SCALE as u128) / (other.magnitude as u128);
+        let mag = u64::try_from(q).map_err(|_| OnchainError::MagnitudeOverflow)?;
+        Ok(I64::from_parts(mag, self.is_negative != other.is_negative))
+    }
+
+    /// `mul_scaled(self, self).magnitude` — always non-negative.
+    pub fn square_scaled(&self) -> Res<u64> {
+        Ok(self.mul_scaled(self)?.magnitude)
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -102,5 +141,45 @@ mod tests {
         let x = I64::from_parts(7, true);
         assert_eq!(x.magnitude(), 7);
         assert!(x.is_negative());
+    }
+
+    #[test]
+    fn i64_add_sub_sign_magnitude() {
+        assert_eq!(I64::from_u64(3).add(&I64::from_u64(4)).unwrap(), I64::from_u64(7));
+        assert_eq!(
+            I64::from_u64(3).add(&I64::from_parts(4, true)).unwrap(),
+            I64::from_parts(1, true)
+        );
+        assert_eq!(I64::from_u64(5).add(&I64::from_parts(5, true)).unwrap(), I64::zero());
+        assert_eq!(I64::from_u64(10).sub(&I64::from_u64(4)).unwrap(), I64::from_u64(6));
+        assert_eq!(
+            I64::from_u64(MAX_U64).add(&I64::from_u64(1)),
+            Err(OnchainError::MagnitudeOverflow)
+        );
+    }
+
+    #[test]
+    fn i64_mul_div_square_scaled() {
+        assert_eq!(
+            I64::from_u64(2 * SCALE).mul_scaled(&I64::from_u64(3 * SCALE)).unwrap(),
+            I64::from_u64(6 * SCALE)
+        );
+        assert_eq!(
+            I64::from_u64(2 * SCALE).mul_scaled(&I64::from_parts(3 * SCALE, true)).unwrap(),
+            I64::from_parts(6 * SCALE, true)
+        );
+        assert_eq!(
+            I64::from_u64(SCALE + 1).mul_scaled(&I64::from_u64(SCALE + 1)).unwrap(),
+            I64::from_u64(SCALE + 2)
+        );
+        assert_eq!(
+            I64::from_u64(6 * SCALE).div_scaled(&I64::from_u64(3 * SCALE)).unwrap(),
+            I64::from_u64(2 * SCALE)
+        );
+        assert_eq!(
+            I64::from_u64(1).div_scaled(&I64::zero()),
+            Err(OnchainError::DivByZero)
+        );
+        assert_eq!(I64::from_parts(2 * SCALE, true).square_scaled().unwrap(), 4 * SCALE);
     }
 }
