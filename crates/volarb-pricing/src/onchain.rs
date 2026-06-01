@@ -207,6 +207,73 @@ fn sqrt(a: u64, b: u64) -> Res<u64> {
     u64::try_from(r).map_err(|_| OnchainError::MagnitudeOverflow)
 }
 
+/// Reduce `x > 1e9` to mantissa in `[1e9, 2e9)` by halving; `shift` = number of halvings.
+/// Bytecode-confirmed: shift set {32,16,8,4,2,1}, condition `(x >> s) >= 1e9` (math.mv re-disasm).
+fn normalize(mut x: u64) -> (u64, u32) {
+    let mut shift = 0u32;
+    for s in [32u32, 16, 8, 4, 2, 1] {
+        if (x >> s) >= SCALE {
+            x >>= s;
+            shift += s;
+        }
+    }
+    (x, shift)
+}
+
+/// `ln` of mantissa in `[1e9, 2e9)` plus `shift*ln2`, via the atanh series.
+///
+/// Op-order is transcribed from the on-chain `math::ln_u128` bytecode (re-disassembled
+/// 2026-06-01), NOT a real-valued-equivalent rearrangement — truncation order is load-bearing
+/// for the eventual Part-2 bit-exact parity:
+/// - Horner folds `*y2` INTO each step: `acc = y2*C5`, then `acc = y2*(C_i + acc)` for C4..C0,
+///   giving `acc = y2*(C0 + y2*(C1 + ... + y2*C5))`.
+/// - The `2*y` factor is applied as a SINGLE `mul_scaled(2*y, 1e9 + acc)` — i.e. one truncation,
+///   not `2 * mul_scaled(y, bracket)` (which would truncate then double).
+fn ln_u128(mantissa: u64, shift: u32) -> Res<I64> {
+    // y = (m - 1e9) / (m + 1e9), 1e9-scaled. m >= 1e9 so numerator >= 0.
+    let num = I64::from_u64(mantissa - SCALE);
+    let den = I64::from_u64(mantissa + SCALE);
+    let y = num.div_scaled(&den)?; // non-negative, < 1e9
+    let y2 = I64::from_u64(y.square_scaled()?); // y^2, non-negative
+    // coeffs 1/3 .. 1/13
+    const C: [u64; 6] = [333_333_333, 200_000_000, 142_857_143, 111_111_111, 90_909_091, 76_923_077];
+    // acc = y2 * C5, then fold: acc = y2 * (C_i + acc) for C4..C0
+    let mut acc = y2.mul_scaled(&I64::from_u64(C[5]))?;
+    for &c in C[..5].iter().rev() {
+        acc = y2.mul_scaled(&acc.add(&I64::from_u64(c))?)?;
+    }
+    // bracket = 1e9 + acc  (the leading atanh `y` term lives in the `1e9`)
+    let bracket = acc.add(&I64::from_u64(SCALE))?;
+    // result = mul_scaled(2*y, bracket) + shift*ln2  — single truncation on the 2*y term
+    let two_y = I64::from_parts(
+        y.magnitude().checked_mul(2).ok_or(OnchainError::MagnitudeOverflow)?,
+        y.is_negative(),
+    );
+    let series = two_y.mul_scaled(&bracket)?;
+    let shift_term = I64::from_u64(
+        (shift as u64).checked_mul(LN2).ok_or(OnchainError::MagnitudeOverflow)?,
+    );
+    series.add(&shift_term)
+}
+
+/// Predict `math::ln(x) -> I64`, `x` in 1e9-FP, `x > 0` (else LnZero).
+fn ln(x: u64) -> Res<I64> {
+    if x == 0 {
+        return Err(OnchainError::LnZero);
+    }
+    if x == SCALE {
+        return Ok(I64::zero());
+    }
+    if x < SCALE {
+        // -ln(1e18 / x) = neg(ln(SCALE*SCALE/x))
+        let arg = u64::try_from((SCALE as u128) * (SCALE as u128) / (x as u128))
+            .map_err(|_| OnchainError::MagnitudeOverflow)?;
+        return Ok(ln(arg)?.neg());
+    }
+    let (mantissa, shift) = normalize(x);
+    ln_u128(mantissa, shift)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -295,5 +362,18 @@ mod tests {
             Err(OnchainError::DivByZero)
         );
         assert_eq!(I64::from_parts(2 * SCALE, true).square_scaled().unwrap(), 4 * SCALE);
+    }
+
+    #[test]
+    fn ln_anchors_and_branches() {
+        assert_eq!(ln(SCALE).unwrap(), I64::zero());
+        assert_eq!(ln(0), Err(OnchainError::LnZero));
+        let l2 = ln(2 * SCALE).unwrap();
+        assert!(!l2.is_negative());
+        approx_fp(l2.magnitude(), LN2, 1000);
+        let lhalf = ln(SCALE / 2).unwrap();
+        assert!(lhalf.is_negative());
+        approx_fp(lhalf.magnitude(), LN2, 1000);
+        approx_fp(ln(2_718_281_828).unwrap().magnitude(), SCALE, 1000);
     }
 }
