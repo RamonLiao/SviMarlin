@@ -3,6 +3,7 @@
 //! harness land in Plan B.) Design: `docs/specs/2026-05-30-volarb-pricing-svi-fitter-design.md`.
 
 pub mod binary;
+pub mod onchain;
 pub mod svi_fit;
 
 pub use svi_fit::fit_smile;
