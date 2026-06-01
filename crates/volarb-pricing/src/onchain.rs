@@ -127,6 +127,23 @@ impl I64 {
     }
 }
 
+/// DeepBook `math::mul`: `floor(a*b / 1e9)`, round DOWN, u128 intermediate.
+/// Checked cast-back: Move's `x as u64` aborts on overflow (does NOT wrap) — mirror as
+/// MagnitudeOverflow rather than a silent Rust wrap (lessons.md 2026-06-01).
+fn db_mul(a: u64, b: u64) -> Res<u64> {
+    let p = (a as u128) * (b as u128) / (SCALE as u128);
+    u64::try_from(p).map_err(|_| OnchainError::MagnitudeOverflow)
+}
+
+/// DeepBook `math::div`: `floor(a*1e9 / b)`, round DOWN. `b == 0` aborts on chain -> DivByZero.
+fn db_div(a: u64, b: u64) -> Res<u64> {
+    if b == 0 {
+        return Err(OnchainError::DivByZero);
+    }
+    let q = (a as u128) * (SCALE as u128) / (b as u128);
+    u64::try_from(q).map_err(|_| OnchainError::MagnitudeOverflow)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -156,6 +173,16 @@ mod tests {
             I64::from_u64(MAX_U64).add(&I64::from_u64(1)),
             Err(OnchainError::MagnitudeOverflow)
         );
+    }
+
+    #[test]
+    fn db_mul_div_round_down() {
+        assert_eq!(db_mul(2 * SCALE, 3 * SCALE).unwrap(), 6 * SCALE);
+        assert_eq!(db_mul(SCALE + 1, SCALE + 1).unwrap(), SCALE + 2);
+        assert_eq!(db_div(6 * SCALE, 4 * SCALE).unwrap(), SCALE + SCALE / 2);
+        assert_eq!(db_div(SCALE, 3 * SCALE).unwrap(), 333_333_333);
+        assert_eq!(db_div(SCALE, 0), Err(OnchainError::DivByZero));
+        assert_eq!(db_mul(MAX_U64, MAX_U64), Err(OnchainError::MagnitudeOverflow));
     }
 
     #[test]
