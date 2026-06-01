@@ -144,6 +144,69 @@ fn db_div(a: u64, b: u64) -> Res<u64> {
     u64::try_from(q).map_err(|_| OnchainError::MagnitudeOverflow)
 }
 
+/// Taylor `Σ_{n=0..12} r^n/n!` in 1e9-FP, `r` in `[0, ln2)`.
+fn exp_series(r: u64) -> u64 {
+    let mut term: u64 = SCALE; // n = 0 term = 1.0
+    let mut sum: u64 = SCALE;
+    for n in 1u64..=12 {
+        term = ((term as u128) * (r as u128) / ((n as u128) * (SCALE as u128))) as u64;
+        if term == 0 {
+            break;
+        }
+        sum += term;
+    }
+    sum
+}
+
+/// Predict `math::exp(&I64) -> u64` in 1e9-FP.
+/// Positive-arg overflow guard at 23.638153699; `2^k` scaling via bit shift (checked).
+fn exp(x: &I64) -> Res<u64> {
+    if x.magnitude() == 0 {
+        return Ok(SCALE);
+    }
+    if !x.is_negative() && x.magnitude() > 23_638_153_699 {
+        return Err(OnchainError::ExpOverflow);
+    }
+    let k = x.magnitude() / LN2;
+    let r = x.magnitude() - k * LN2; // in [0, ln2)
+    let base = exp_series(r); // in [1.0, 2.0)*1e9
+    if !x.is_negative() {
+        let scaled = (base as u128) << k;
+        u64::try_from(scaled).map_err(|_| OnchainError::ExpOverflow)
+    } else {
+        let recip = (SCALE as u128) * (SCALE as u128) / (base as u128);
+        Ok((recip >> k) as u64)
+    }
+}
+
+/// `sqrt_u128(a)`: bit-length initial guess, 7 Newton iterations, final down-adjust.
+fn sqrt_u128(a: u128) -> u128 {
+    if a == 0 {
+        return 0;
+    }
+    let bits = 128 - a.leading_zeros();
+    let mut x = 1u128 << ((bits + 1) / 2);
+    for _ in 0..7 {
+        x = (x + a / x) / 2;
+    }
+    if x * x > a {
+        x -= 1;
+    }
+    x
+}
+
+/// Predict `math::sqrt(a, b) -> u64`: FP sqrt of `a/b`-ish. `0 < b <= 1e9` else `abort(2)`.
+/// In the oracle path `b == 1e9` (inv == 1) -> `floor(sqrt(a*1e9))`.
+fn sqrt(a: u64, b: u64) -> Res<u64> {
+    if b == 0 || b > SCALE {
+        return Err(OnchainError::SqrtDomain);
+    }
+    let inv = (SCALE / b) as u128; // b <= 1e9 -> inv >= 1
+    let radicand = (a as u128) * inv * (SCALE as u128);
+    let r = sqrt_u128(radicand) / inv;
+    u64::try_from(r).map_err(|_| OnchainError::MagnitudeOverflow)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -183,6 +246,30 @@ mod tests {
         assert_eq!(db_div(SCALE, 3 * SCALE).unwrap(), 333_333_333);
         assert_eq!(db_div(SCALE, 0), Err(OnchainError::DivByZero));
         assert_eq!(db_mul(MAX_U64, MAX_U64), Err(OnchainError::MagnitudeOverflow));
+    }
+
+    /// Assert two 1e9-FP integers agree within `tol` units (floor-truncation tolerance).
+    fn approx_fp(got: u64, expected: u64, tol: u64) {
+        let d = got.abs_diff(expected);
+        assert!(d <= tol, "got {got}, expected {expected} (+/-{tol}), diff {d}");
+    }
+
+    #[test]
+    fn exp_anchors_and_overflow() {
+        assert_eq!(exp(&I64::zero()).unwrap(), SCALE);
+        approx_fp(exp(&I64::from_u64(LN2)).unwrap(), 2 * SCALE, 50);
+        approx_fp(exp(&I64::from_parts(LN2, true)).unwrap(), SCALE / 2, 50);
+        assert_eq!(exp(&I64::from_u64(23_638_153_700)), Err(OnchainError::ExpOverflow));
+        assert!(exp(&I64::from_u64(23_638_153_699)).is_ok());
+    }
+
+    #[test]
+    fn sqrt_perfect_and_domain() {
+        assert_eq!(sqrt(4 * SCALE, SCALE).unwrap(), 2 * SCALE);
+        approx_fp(sqrt(2 * SCALE, SCALE).unwrap(), 1_414_213_562, 5);
+        assert_eq!(sqrt(0, SCALE).unwrap(), 0);
+        assert_eq!(sqrt(SCALE, 0), Err(OnchainError::SqrtDomain));
+        assert_eq!(sqrt(SCALE, SCALE + 1), Err(OnchainError::SqrtDomain));
     }
 
     #[test]
