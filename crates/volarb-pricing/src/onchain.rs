@@ -59,17 +59,26 @@ pub struct I64 {
 
 impl I64 {
     pub fn zero() -> Self {
-        I64 { magnitude: 0, is_negative: false }
+        I64 {
+            magnitude: 0,
+            is_negative: false,
+        }
     }
     pub fn from_u64(x: u64) -> Self {
-        I64 { magnitude: x, is_negative: false }
+        I64 {
+            magnitude: x,
+            is_negative: false,
+        }
     }
     /// `-0` normalizes to `+0` (matches chain `from_parts`).
     pub fn from_parts(magnitude: u64, is_negative: bool) -> Self {
         if magnitude == 0 {
             I64::zero()
         } else {
-            I64 { magnitude, is_negative }
+            I64 {
+                magnitude,
+                is_negative,
+            }
         }
     }
     pub fn magnitude(&self) -> u64 {
@@ -94,9 +103,15 @@ impl I64 {
                 .ok_or(OnchainError::MagnitudeOverflow)?;
             Ok(I64::from_parts(mag, self.is_negative))
         } else if self.magnitude >= other.magnitude {
-            Ok(I64::from_parts(self.magnitude - other.magnitude, self.is_negative))
+            Ok(I64::from_parts(
+                self.magnitude - other.magnitude,
+                self.is_negative,
+            ))
         } else {
-            Ok(I64::from_parts(other.magnitude - self.magnitude, other.is_negative))
+            Ok(I64::from_parts(
+                other.magnitude - self.magnitude,
+                other.is_negative,
+            ))
         }
     }
 
@@ -185,7 +200,7 @@ fn sqrt_u128(a: u128) -> u128 {
         return 0;
     }
     let bits = 128 - a.leading_zeros();
-    let mut x = 1u128 << ((bits + 1) / 2);
+    let mut x = 1u128 << bits.div_ceil(2);
     for _ in 0..7 {
         x = (x + a / x) / 2;
     }
@@ -236,7 +251,14 @@ fn ln_u128(mantissa: u64, shift: u32) -> Res<I64> {
     let y = num.div_scaled(&den)?; // non-negative, < 1e9
     let y2 = I64::from_u64(y.square_scaled()?); // y^2, non-negative
     // coeffs 1/3 .. 1/13
-    const C: [u64; 6] = [333_333_333, 200_000_000, 142_857_143, 111_111_111, 90_909_091, 76_923_077];
+    const C: [u64; 6] = [
+        333_333_333,
+        200_000_000,
+        142_857_143,
+        111_111_111,
+        90_909_091,
+        76_923_077,
+    ];
     // acc = y2 * C5, then fold: acc = y2 * (C_i + acc) for C4..C0
     let mut acc = y2.mul_scaled(&I64::from_u64(C[5]))?;
     for &c in C[..5].iter().rev() {
@@ -246,12 +268,16 @@ fn ln_u128(mantissa: u64, shift: u32) -> Res<I64> {
     let bracket = acc.add(&I64::from_u64(SCALE))?;
     // result = mul_scaled(2*y, bracket) + shift*ln2  — single truncation on the 2*y term
     let two_y = I64::from_parts(
-        y.magnitude().checked_mul(2).ok_or(OnchainError::MagnitudeOverflow)?,
+        y.magnitude()
+            .checked_mul(2)
+            .ok_or(OnchainError::MagnitudeOverflow)?,
         y.is_negative(),
     );
     let series = two_y.mul_scaled(&bracket)?;
     let shift_term = I64::from_u64(
-        (shift as u64).checked_mul(LN2).ok_or(OnchainError::MagnitudeOverflow)?,
+        (shift as u64)
+            .checked_mul(LN2)
+            .ok_or(OnchainError::MagnitudeOverflow)?,
     );
     series.add(&shift_term)
 }
@@ -337,13 +363,21 @@ fn normal_cdf(x: &I64) -> Res<u64> {
             .checked_add(A_C15)
             .ok_or(OnchainError::MagnitudeOverflow)?;
         let val = db_mul(mag, db_div(num, den)?)?;
-        return Ok(if x.is_negative() { HALF - val } else { HALF + val });
+        return Ok(if x.is_negative() {
+            HALF - val
+        } else {
+            HALF + val
+        });
     }
     if mag < NCDF_B_BREAK {
         // regime B: tail = R(mag) * exp(-mag^2/2) ; result = tail or 1e9 - tail
-        let num = poly_fold(db_mul(B_C25, mag)?, &[B_C17, B_C18, B_C19, B_C20, B_C21, B_C22, B_C23], mag)?
-            .checked_add(B_C24)
-            .ok_or(OnchainError::MagnitudeOverflow)?;
+        let num = poly_fold(
+            db_mul(B_C25, mag)?,
+            &[B_C17, B_C18, B_C19, B_C20, B_C21, B_C22, B_C23],
+            mag,
+        )?
+        .checked_add(B_C24)
+        .ok_or(OnchainError::MagnitudeOverflow)?;
         let den = poly_fold(mag, &[B_C26, B_C27, B_C28, B_C29, B_C30, B_C31, B_C32], mag)?
             .checked_add(B_C33)
             .ok_or(OnchainError::MagnitudeOverflow)?;
@@ -439,13 +473,22 @@ mod tests {
 
     #[test]
     fn i64_add_sub_sign_magnitude() {
-        assert_eq!(I64::from_u64(3).add(&I64::from_u64(4)).unwrap(), I64::from_u64(7));
+        assert_eq!(
+            I64::from_u64(3).add(&I64::from_u64(4)).unwrap(),
+            I64::from_u64(7)
+        );
         assert_eq!(
             I64::from_u64(3).add(&I64::from_parts(4, true)).unwrap(),
             I64::from_parts(1, true)
         );
-        assert_eq!(I64::from_u64(5).add(&I64::from_parts(5, true)).unwrap(), I64::zero());
-        assert_eq!(I64::from_u64(10).sub(&I64::from_u64(4)).unwrap(), I64::from_u64(6));
+        assert_eq!(
+            I64::from_u64(5).add(&I64::from_parts(5, true)).unwrap(),
+            I64::zero()
+        );
+        assert_eq!(
+            I64::from_u64(10).sub(&I64::from_u64(4)).unwrap(),
+            I64::from_u64(6)
+        );
         assert_eq!(
             I64::from_u64(MAX_U64).add(&I64::from_u64(1)),
             Err(OnchainError::MagnitudeOverflow)
@@ -459,13 +502,19 @@ mod tests {
         assert_eq!(db_div(6 * SCALE, 4 * SCALE).unwrap(), SCALE + SCALE / 2);
         assert_eq!(db_div(SCALE, 3 * SCALE).unwrap(), 333_333_333);
         assert_eq!(db_div(SCALE, 0), Err(OnchainError::DivByZero));
-        assert_eq!(db_mul(MAX_U64, MAX_U64), Err(OnchainError::MagnitudeOverflow));
+        assert_eq!(
+            db_mul(MAX_U64, MAX_U64),
+            Err(OnchainError::MagnitudeOverflow)
+        );
     }
 
     /// Assert two 1e9-FP integers agree within `tol` units (floor-truncation tolerance).
     fn approx_fp(got: u64, expected: u64, tol: u64) {
         let d = got.abs_diff(expected);
-        assert!(d <= tol, "got {got}, expected {expected} (+/-{tol}), diff {d}");
+        assert!(
+            d <= tol,
+            "got {got}, expected {expected} (+/-{tol}), diff {d}"
+        );
     }
 
     #[test]
@@ -473,7 +522,10 @@ mod tests {
         assert_eq!(exp(&I64::zero()).unwrap(), SCALE);
         approx_fp(exp(&I64::from_u64(LN2)).unwrap(), 2 * SCALE, 50);
         approx_fp(exp(&I64::from_parts(LN2, true)).unwrap(), SCALE / 2, 50);
-        assert_eq!(exp(&I64::from_u64(23_638_153_700)), Err(OnchainError::ExpOverflow));
+        assert_eq!(
+            exp(&I64::from_u64(23_638_153_700)),
+            Err(OnchainError::ExpOverflow)
+        );
         assert!(exp(&I64::from_u64(23_638_153_699)).is_ok());
     }
 
@@ -489,26 +541,37 @@ mod tests {
     #[test]
     fn i64_mul_div_square_scaled() {
         assert_eq!(
-            I64::from_u64(2 * SCALE).mul_scaled(&I64::from_u64(3 * SCALE)).unwrap(),
+            I64::from_u64(2 * SCALE)
+                .mul_scaled(&I64::from_u64(3 * SCALE))
+                .unwrap(),
             I64::from_u64(6 * SCALE)
         );
         assert_eq!(
-            I64::from_u64(2 * SCALE).mul_scaled(&I64::from_parts(3 * SCALE, true)).unwrap(),
+            I64::from_u64(2 * SCALE)
+                .mul_scaled(&I64::from_parts(3 * SCALE, true))
+                .unwrap(),
             I64::from_parts(6 * SCALE, true)
         );
         assert_eq!(
-            I64::from_u64(SCALE + 1).mul_scaled(&I64::from_u64(SCALE + 1)).unwrap(),
+            I64::from_u64(SCALE + 1)
+                .mul_scaled(&I64::from_u64(SCALE + 1))
+                .unwrap(),
             I64::from_u64(SCALE + 2)
         );
         assert_eq!(
-            I64::from_u64(6 * SCALE).div_scaled(&I64::from_u64(3 * SCALE)).unwrap(),
+            I64::from_u64(6 * SCALE)
+                .div_scaled(&I64::from_u64(3 * SCALE))
+                .unwrap(),
             I64::from_u64(2 * SCALE)
         );
         assert_eq!(
             I64::from_u64(1).div_scaled(&I64::zero()),
             Err(OnchainError::DivByZero)
         );
-        assert_eq!(I64::from_parts(2 * SCALE, true).square_scaled().unwrap(), 4 * SCALE);
+        assert_eq!(
+            I64::from_parts(2 * SCALE, true).square_scaled().unwrap(),
+            4 * SCALE
+        );
     }
 
     #[test]
@@ -530,7 +593,10 @@ mod tests {
         assert_eq!(normal_cdf(&I64::zero()).unwrap(), SCALE / 2);
         // saturation past the B-break (8.0 is well past it)
         assert_eq!(normal_cdf(&I64::from_u64(8 * SCALE + 1)).unwrap(), SCALE);
-        assert_eq!(normal_cdf(&I64::from_parts(8 * SCALE + 1, true)).unwrap(), 0);
+        assert_eq!(
+            normal_cdf(&I64::from_parts(8 * SCALE + 1, true)).unwrap(),
+            0
+        );
         // symmetry: N(x) + N(-x) ~ 1.0
         let xp = normal_cdf(&I64::from_u64(SCALE)).unwrap();
         let xm = normal_cdf(&I64::from_parts(SCALE, true)).unwrap();
@@ -538,9 +604,17 @@ mod tests {
         // known value N(1.0) ~ 0.841344746 (regime B)
         approx_fp(normal_cdf(&I64::from_u64(SCALE)).unwrap(), 841_344_746, 200);
         // N(-1.96) ~ 0.0249979 (regime B)
-        approx_fp(normal_cdf(&I64::from_parts(1_960_000_000, true)).unwrap(), 24_997_895, 500);
+        approx_fp(
+            normal_cdf(&I64::from_parts(1_960_000_000, true)).unwrap(),
+            24_997_895,
+            500,
+        );
         // regime A small value N(0.5) ~ 0.691462461
-        approx_fp(normal_cdf(&I64::from_u64(500_000_000)).unwrap(), 691_462_461, 200);
+        approx_fp(
+            normal_cdf(&I64::from_u64(500_000_000)).unwrap(),
+            691_462_461,
+            200,
+        );
     }
 
     #[test]
@@ -598,7 +672,10 @@ mod tests {
     fn forward_zero_errors() {
         let mut o = sample_oracle();
         o.forward = 0;
-        assert_eq!(o.compute_price(100 * SCALE), Err(OnchainError::ForwardNonPositive));
+        assert_eq!(
+            o.compute_price(100 * SCALE),
+            Err(OnchainError::ForwardNonPositive)
+        );
     }
 
     // --- Monkey tests (test.md mandate: try to break it; never panic, always typed Err) ---
@@ -611,12 +688,18 @@ mod tests {
         let _ = o.compute_price(MAX_U64);
         let mut o0 = sample_oracle();
         o0.forward = 0;
-        assert_eq!(o0.compute_price(SCALE), Err(OnchainError::ForwardNonPositive));
+        assert_eq!(
+            o0.compute_price(SCALE),
+            Err(OnchainError::ForwardNonPositive)
+        );
     }
 
     #[test]
     fn monkey_degenerate_params_typed_errors() {
-        assert_eq!(I64::from_u64(1).div_scaled(&I64::zero()), Err(OnchainError::DivByZero));
+        assert_eq!(
+            I64::from_u64(1).div_scaled(&I64::zero()),
+            Err(OnchainError::DivByZero)
+        );
         assert_eq!(
             I64::from_u64(MAX_U64).add(&I64::from_u64(MAX_U64)),
             Err(OnchainError::MagnitudeOverflow)
@@ -630,7 +713,10 @@ mod tests {
     fn monkey_neg_zero_normalizes_everywhere() {
         assert_eq!(I64::from_parts(0, true), I64::zero());
         assert_eq!(I64::from_u64(0).neg(), I64::zero());
-        assert_eq!(I64::from_u64(5).mul_scaled(&I64::zero()).unwrap(), I64::zero());
+        assert_eq!(
+            I64::from_u64(5).mul_scaled(&I64::zero()).unwrap(),
+            I64::zero()
+        );
         let mut o = sample_oracle();
         o.m = I64::from_parts(0, true);
         o.rho = I64::from_parts(0, true);
@@ -649,7 +735,10 @@ mod tests {
             m: I64::zero(),
             settlement: None,
         };
-        assert_eq!(o.compute_price(100 * SCALE), Err(OnchainError::WNonPositive));
+        assert_eq!(
+            o.compute_price(100 * SCALE),
+            Err(OnchainError::WNonPositive)
+        );
     }
 
     #[test]
@@ -662,7 +751,11 @@ mod tests {
             let neg = normal_cdf(&I64::from_parts(x, true)).unwrap();
             assert!(pos + 2 >= prev, "non-monotone at {x}");
             // symmetry within truncation band
-            assert!(pos.abs_diff(SCALE - neg) <= 50, "asymmetry at {x}: {pos} vs {}", SCALE - neg);
+            assert!(
+                pos.abs_diff(SCALE - neg) <= 50,
+                "asymmetry at {x}: {pos} vs {}",
+                SCALE - neg
+            );
             prev = pos;
             x += 1_000_000; // 0.001 steps
         }
