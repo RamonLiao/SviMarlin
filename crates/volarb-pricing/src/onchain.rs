@@ -274,6 +274,89 @@ fn ln(x: u64) -> Res<I64> {
     ln_u128(mantissa, shift)
 }
 
+// --- normal_cdf, transcribed from on-chain `math::normal_cdf_u128` bytecode (re-disasm 2026-06-01) ---
+//
+// Two regimes split at the constants below; NO separate 8e9 clamp (the chain saturates at the
+// B-break via the else branch — verified in bytecode). Each regime is TWO interleaved Horner-fold
+// chains (numerator + denominator), step `acc = (acc + c) * var / 1e9` == `db_mul(acc + c, var)`.
+// IMPORTANT: the findings-doc grouping mis-assigned `11` — it is regime-B's numerator LEADING
+// coeff (chain init `db_mul(11, mag)`), NOT a denominator coeff. Pairing is bytecode-confirmed.
+const NCDF_A_BREAK: u64 = 662_910_000;
+const NCDF_B_BREAK: u64 = 5_656_854_249;
+// Regime A (polynomials in z = mag^2/1e9). Numerator init coeff = A_C11; denominator init = z (1.0).
+const A_C7: u64 = 2_235_252_035;
+const A_C8: u64 = 161_028_231_069;
+const A_C9: u64 = 1_067_689_485_460;
+const A_C10: u64 = 18_154_981_253_344;
+const A_C11: u64 = 65_682_338;
+const A_C12: u64 = 47_202_581_905;
+const A_C13: u64 = 976_098_551_738;
+const A_C14: u64 = 10_260_932_208_619;
+const A_C15: u64 = 45_507_789_335_027;
+// Regime B (polynomials in mag). Numerator init coeff = B_C25 (== 11); denominator init = mag (1.0).
+const B_C17: u64 = 398_941_512;
+const B_C18: u64 = 8_883_149_794;
+const B_C19: u64 = 93_506_656_132;
+const B_C20: u64 = 597_270_276_395;
+const B_C21: u64 = 2_494_537_585_290;
+const B_C22: u64 = 6_848_190_450_536;
+const B_C23: u64 = 11_602_651_437_647;
+const B_C24: u64 = 9_842_714_838_384;
+const B_C25: u64 = 11;
+const B_C26: u64 = 22_266_688_044;
+const B_C27: u64 = 235_387_901_782;
+const B_C28: u64 = 1_519_377_599_408;
+const B_C29: u64 = 6_485_558_298_267;
+const B_C30: u64 = 18_615_571_640_885;
+const B_C31: u64 = 34_900_952_721_146;
+const B_C32: u64 = 38_912_003_286_093;
+const B_C33: u64 = 19_685_429_676_860;
+
+/// Horner-fold chain: `acc` then for each `c`: `acc = (acc + c) * var / 1e9` (`db_mul(acc+c, var)`).
+/// The final `+ last` add (no trailing multiply) is applied by the caller.
+fn poly_fold(init: u64, coeffs: &[u64], var: u64) -> Res<u64> {
+    let mut acc = init;
+    for &c in coeffs {
+        let s = acc.checked_add(c).ok_or(OnchainError::MagnitudeOverflow)?;
+        acc = db_mul(s, var)?;
+    }
+    Ok(acc)
+}
+
+/// Predict `math::normal_cdf(&I64) -> u64` (probability in 1e9-FP).
+fn normal_cdf(x: &I64) -> Res<u64> {
+    const HALF: u64 = SCALE / 2;
+    let mag = x.magnitude();
+    if mag < NCDF_A_BREAK {
+        // regime A: val = mag * num/den ; result = 0.5 -/+ val
+        let z = db_mul(mag, mag)?;
+        let num = poly_fold(db_mul(A_C11, z)?, &[A_C7, A_C8, A_C9], z)?
+            .checked_add(A_C10)
+            .ok_or(OnchainError::MagnitudeOverflow)?;
+        let den = poly_fold(z, &[A_C12, A_C13, A_C14], z)?
+            .checked_add(A_C15)
+            .ok_or(OnchainError::MagnitudeOverflow)?;
+        let val = db_mul(mag, db_div(num, den)?)?;
+        return Ok(if x.is_negative() { HALF - val } else { HALF + val });
+    }
+    if mag < NCDF_B_BREAK {
+        // regime B: tail = R(mag) * exp(-mag^2/2) ; result = tail or 1e9 - tail
+        let num = poly_fold(db_mul(B_C25, mag)?, &[B_C17, B_C18, B_C19, B_C20, B_C21, B_C22, B_C23], mag)?
+            .checked_add(B_C24)
+            .ok_or(OnchainError::MagnitudeOverflow)?;
+        let den = poly_fold(mag, &[B_C26, B_C27, B_C28, B_C29, B_C30, B_C31, B_C32], mag)?
+            .checked_add(B_C33)
+            .ok_or(OnchainError::MagnitudeOverflow)?;
+        let r = db_div(num, den)?;
+        let half_sq = db_mul(mag, mag)? / 2; // mag^2/(2*1e9); floor identity matches chain's mag*mag/(1e9*2)
+        let e = exp(&I64::from_parts(half_sq, true))?; // exp(-mag^2/2)
+        let tail = db_mul(r, e)?;
+        return Ok(if x.is_negative() { tail } else { SCALE - tail });
+    }
+    // mag >= B-break: saturate
+    Ok(if x.is_negative() { 0 } else { SCALE })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -375,5 +458,37 @@ mod tests {
         assert!(lhalf.is_negative());
         approx_fp(lhalf.magnitude(), LN2, 1000);
         approx_fp(ln(2_718_281_828).unwrap().magnitude(), SCALE, 1000);
+    }
+
+    #[test]
+    fn normal_cdf_anchors_and_clamps() {
+        // N(0) == 0.5 exactly
+        assert_eq!(normal_cdf(&I64::zero()).unwrap(), SCALE / 2);
+        // saturation past the B-break (8.0 is well past it)
+        assert_eq!(normal_cdf(&I64::from_u64(8 * SCALE + 1)).unwrap(), SCALE);
+        assert_eq!(normal_cdf(&I64::from_parts(8 * SCALE + 1, true)).unwrap(), 0);
+        // symmetry: N(x) + N(-x) ~ 1.0
+        let xp = normal_cdf(&I64::from_u64(SCALE)).unwrap();
+        let xm = normal_cdf(&I64::from_parts(SCALE, true)).unwrap();
+        approx_fp(xp + xm, SCALE, 50);
+        // known value N(1.0) ~ 0.841344746 (regime B)
+        approx_fp(normal_cdf(&I64::from_u64(SCALE)).unwrap(), 841_344_746, 200);
+        // N(-1.96) ~ 0.0249979 (regime B)
+        approx_fp(normal_cdf(&I64::from_parts(1_960_000_000, true)).unwrap(), 24_997_895, 500);
+        // regime A small value N(0.5) ~ 0.691462461
+        approx_fp(normal_cdf(&I64::from_u64(500_000_000)).unwrap(), 691_462_461, 200);
+    }
+
+    #[test]
+    fn normal_cdf_monotone_across_regime_breaks() {
+        // sweep across both regime breaks; must be non-decreasing (within floor truncation)
+        let mut prev = 0u64;
+        let mut x = 0u64;
+        while x <= 7 * SCALE {
+            let v = normal_cdf(&I64::from_u64(x)).unwrap();
+            assert!(v + 2 >= prev, "non-monotone at x={x}: {v} < {prev}");
+            prev = v;
+            x += 10_000_000; // 0.01 steps -> crosses 0.66291 and 5.65685
+        }
     }
 }
