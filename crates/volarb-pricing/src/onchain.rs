@@ -357,6 +357,70 @@ fn normal_cdf(x: &I64) -> Res<u64> {
     Ok(if x.is_negative() { 0 } else { SCALE })
 }
 
+/// Subset of on-chain `oracle::OracleSVI` needed to price one expiry. All FP fields 1e9-scaled.
+/// `w` is RAW total variance — `a,b,sigma,rho,m` already bake in T. No annualization, no √T.
+#[derive(Debug, Clone)]
+pub struct OnchainOracle {
+    pub forward: u64,
+    pub a: u64,
+    pub b: u64,
+    pub sigma: u64,
+    pub rho: I64,
+    pub m: I64,
+    pub settlement: Option<u64>,
+}
+
+impl OnchainOracle {
+    /// `compute_nd2`: N(d2) with `d2 = (ln(F/K) - w/2)/sqrt(w)`, `w` raw SVI total variance.
+    /// Mirrors on-chain `oracle::compute_nd2` op-for-op (findings §compute_nd2).
+    fn compute_nd2(&self, strike: u64) -> Res<u64> {
+        if self.forward == 0 {
+            return Err(OnchainError::ForwardNonPositive);
+        }
+        // k = ln(K/F) = ln(db_div(K, F))
+        let k = ln(db_div(strike, self.forward)?)?;
+        let diff = k.sub(&self.m)?; // k - m
+        let inner = diff
+            .square_scaled()?
+            .checked_add(db_mul(self.sigma, self.sigma)?)
+            .ok_or(OnchainError::MagnitudeOverflow)?; // (k-m)^2 + sigma^2
+        let sqrt_t = I64::from_u64(sqrt(inner, SCALE)?); // sqrt((k-m)^2 + sigma^2)
+        let rho_term = self.rho.mul_scaled(&diff)?; // rho*(k-m)
+        let bracket = rho_term.add(&sqrt_t)?;
+        if bracket.is_negative() {
+            return Err(OnchainError::BracketNegative);
+        }
+        // w = a + b*bracket  (raw total variance)
+        let w = self
+            .a
+            .checked_add(db_mul(self.b, bracket.magnitude())?)
+            .ok_or(OnchainError::MagnitudeOverflow)?;
+        if w == 0 {
+            return Err(OnchainError::WNonPositive);
+        }
+        let sqrt_w = I64::from_u64(sqrt(w, SCALE)?);
+        let half_w = I64::from_u64(w / 2);
+        let numer = k.add(&half_w)?; // ln(K/F) + w/2
+        let d = numer.div_scaled(&sqrt_w)?;
+        let d2 = d.neg(); // (ln(F/K) - w/2)/sqrt(w)
+        normal_cdf(&d2)
+    }
+
+    /// UP price (cash-or-nothing digital). Settled: strict `>` so `s == K` -> 0 (ties resolve DOWN).
+    pub fn compute_price(&self, strike: u64) -> Res<u64> {
+        match self.settlement {
+            Some(s) => Ok(if s > strike { SCALE } else { 0 }),
+            None => self.compute_nd2(strike),
+        }
+    }
+
+    /// `(up, down)` where `down = SCALE - up`.
+    pub fn binary_price_pair(&self, strike: u64) -> Res<(u64, u64)> {
+        let up = self.compute_price(strike)?;
+        Ok((up, SCALE - up))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -490,5 +554,50 @@ mod tests {
             prev = v;
             x += 10_000_000; // 0.01 steps -> crosses 0.66291 and 5.65685
         }
+    }
+
+    /// ATM-ish oracle: F = 100, small variance.
+    fn sample_oracle() -> OnchainOracle {
+        OnchainOracle {
+            forward: 100 * SCALE,
+            a: 10_000_000,                           // 0.01 base variance
+            b: 100_000_000,                          // 0.1
+            sigma: 200_000_000,                      // 0.2
+            rho: I64::from_parts(300_000_000, true), // -0.3
+            m: I64::zero(),
+            settlement: None,
+        }
+    }
+
+    #[test]
+    fn compute_price_atm_in_unit_range() {
+        let o = sample_oracle();
+        let p = o.compute_price(100 * SCALE).unwrap(); // K == F -> k == 0
+        // ATM digital under positive variance: d2 = -w/(2*sqrt(w)) < 0 -> N(d2) < 0.5
+        assert!(p < SCALE / 2, "ATM N(d2) should be < 0.5, got {p}");
+        assert!(p > 0 && p < SCALE);
+    }
+
+    #[test]
+    fn compute_price_settled_strict_gt() {
+        let mut o = sample_oracle();
+        o.settlement = Some(120 * SCALE);
+        assert_eq!(o.compute_price(100 * SCALE).unwrap(), SCALE); // s > K -> 1.0
+        assert_eq!(o.compute_price(120 * SCALE).unwrap(), 0); // s == K -> 0 (ties DOWN)
+        assert_eq!(o.compute_price(130 * SCALE).unwrap(), 0); // s < K -> 0
+    }
+
+    #[test]
+    fn binary_pair_sums_to_one() {
+        let o = sample_oracle();
+        let (up, down) = o.binary_price_pair(100 * SCALE).unwrap();
+        assert_eq!(up + down, SCALE);
+    }
+
+    #[test]
+    fn forward_zero_errors() {
+        let mut o = sample_oracle();
+        o.forward = 0;
+        assert_eq!(o.compute_price(100 * SCALE), Err(OnchainError::ForwardNonPositive));
     }
 }
