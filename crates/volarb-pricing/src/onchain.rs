@@ -600,4 +600,71 @@ mod tests {
         o.forward = 0;
         assert_eq!(o.compute_price(100 * SCALE), Err(OnchainError::ForwardNonPositive));
     }
+
+    // --- Monkey tests (test.md mandate: try to break it; never panic, always typed Err) ---
+
+    #[test]
+    fn monkey_extreme_strikes_never_panic() {
+        let o = sample_oracle();
+        // strike == 1 (deep ITM for UP) and MAX_U64 (deep OTM): Ok or typed Err, never panic
+        let _ = o.compute_price(1);
+        let _ = o.compute_price(MAX_U64);
+        let mut o0 = sample_oracle();
+        o0.forward = 0;
+        assert_eq!(o0.compute_price(SCALE), Err(OnchainError::ForwardNonPositive));
+    }
+
+    #[test]
+    fn monkey_degenerate_params_typed_errors() {
+        assert_eq!(I64::from_u64(1).div_scaled(&I64::zero()), Err(OnchainError::DivByZero));
+        assert_eq!(
+            I64::from_u64(MAX_U64).add(&I64::from_u64(MAX_U64)),
+            Err(OnchainError::MagnitudeOverflow)
+        );
+        assert_eq!(sqrt(SCALE, 0), Err(OnchainError::SqrtDomain));
+        assert_eq!(sqrt(SCALE, SCALE + 1), Err(OnchainError::SqrtDomain));
+        assert_eq!(ln(0), Err(OnchainError::LnZero));
+    }
+
+    #[test]
+    fn monkey_neg_zero_normalizes_everywhere() {
+        assert_eq!(I64::from_parts(0, true), I64::zero());
+        assert_eq!(I64::from_u64(0).neg(), I64::zero());
+        assert_eq!(I64::from_u64(5).mul_scaled(&I64::zero()).unwrap(), I64::zero());
+        let mut o = sample_oracle();
+        o.m = I64::from_parts(0, true);
+        o.rho = I64::from_parts(0, true);
+        assert!(o.compute_price(100 * SCALE).is_ok());
+    }
+
+    #[test]
+    fn monkey_w_nonpositive_when_a_zero_and_bracket_zero() {
+        // a = 0, b = 0, sigma = 0 -> at K==F: k=0, inner=0, bracket=0, w=0 -> WNonPositive (no panic)
+        let o = OnchainOracle {
+            forward: 100 * SCALE,
+            a: 0,
+            b: 0,
+            sigma: 0,
+            rho: I64::zero(),
+            m: I64::zero(),
+            settlement: None,
+        };
+        assert_eq!(o.compute_price(100 * SCALE), Err(OnchainError::WNonPositive));
+    }
+
+    #[test]
+    fn monkey_normal_cdf_full_sweep_no_panic_monotone() {
+        // dense sweep both signs across full domain; never panic, non-decreasing in x
+        let mut prev = 0u64;
+        let mut x = 0u64;
+        while x <= 9 * SCALE {
+            let pos = normal_cdf(&I64::from_u64(x)).unwrap();
+            let neg = normal_cdf(&I64::from_parts(x, true)).unwrap();
+            assert!(pos + 2 >= prev, "non-monotone at {x}");
+            // symmetry within truncation band
+            assert!(pos.abs_diff(SCALE - neg) <= 50, "asymmetry at {x}: {pos} vs {}", SCALE - neg);
+            prev = pos;
+            x += 1_000_000; // 0.001 steps
+        }
+    }
 }
