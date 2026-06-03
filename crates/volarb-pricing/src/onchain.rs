@@ -160,17 +160,20 @@ fn db_div(a: u64, b: u64) -> Res<u64> {
 }
 
 /// Taylor `Σ_{n=0..12} r^n/n!` in 1e9-FP, `r` in `[0, ln2)`.
-fn exp_series(r: u64) -> u64 {
+fn exp_series(r: u64) -> Res<u64> {
     let mut term: u64 = SCALE; // n = 0 term = 1.0
     let mut sum: u64 = SCALE;
     for n in 1u64..=12 {
-        term = ((term as u128) * (r as u128) / ((n as u128) * (SCALE as u128))) as u64;
+        // term stays <= 1e9 (multiply by r < ln2 < 1e9, divide by n*1e9), but use a checked
+        // cast-back per the module's no-silent-`as u64` rule.
+        let next = (term as u128) * (r as u128) / ((n as u128) * (SCALE as u128));
+        term = u64::try_from(next).map_err(|_| OnchainError::MagnitudeOverflow)?;
         if term == 0 {
             break;
         }
         sum += term;
     }
-    sum
+    Ok(sum)
 }
 
 /// Predict `math::exp(&I64) -> u64` in 1e9-FP.
@@ -184,13 +187,18 @@ fn exp(x: &I64) -> Res<u64> {
     }
     let k = x.magnitude() / LN2;
     let r = x.magnitude() - k * LN2; // in [0, ln2)
-    let base = exp_series(r); // in [1.0, 2.0)*1e9
+    let base = exp_series(r)?; // in [1.0, 2.0)*1e9
     if !x.is_negative() {
+        // Positive guard caps mag at 23.638e9 -> k <= 34, so `<< k` cannot reach the 128-bit limit.
         let scaled = (base as u128) << k;
         u64::try_from(scaled).map_err(|_| OnchainError::ExpOverflow)
     } else {
+        // Negative arg: reciprocal then shift right. recip <= 1e9 so any k >= 30 zeros it; the
+        // chain's exp early-returns 0 once it shifts to zero. Guard k >= 128 to avoid an
+        // out-of-range u128 shift (Rust: debug panic / release wrap) for huge-magnitude inputs.
         let recip = (SCALE as u128) * (SCALE as u128) / (base as u128);
-        Ok((recip >> k) as u64)
+        let shifted = if k >= 128 { 0 } else { recip >> k };
+        u64::try_from(shifted).map_err(|_| OnchainError::MagnitudeOverflow)
     }
 }
 
@@ -363,8 +371,11 @@ fn normal_cdf(x: &I64) -> Res<u64> {
             .checked_add(A_C15)
             .ok_or(OnchainError::MagnitudeOverflow)?;
         let val = db_mul(mag, db_div(num, den)?)?;
+        // Chain does plain `0.5 -/+ val` (Move Sub aborts on underflow). checked_sub keeps that
+        // fail-loud semantic instead of a silent release wrap if val ever exceeds 0.5.
         return Ok(if x.is_negative() {
-            HALF - val
+            HALF.checked_sub(val)
+                .ok_or(OnchainError::MagnitudeOverflow)?
         } else {
             HALF + val
         });
@@ -385,7 +396,14 @@ fn normal_cdf(x: &I64) -> Res<u64> {
         let half_sq = db_mul(mag, mag)? / 2; // mag^2/(2*1e9); floor identity matches chain's mag*mag/(1e9*2)
         let e = exp(&I64::from_parts(half_sq, true))?; // exp(-mag^2/2)
         let tail = db_mul(r, e)?;
-        return Ok(if x.is_negative() { tail } else { SCALE - tail });
+        // chain: `1e9 - tail` (Move Sub aborts on underflow) — checked to stay fail-loud.
+        return Ok(if x.is_negative() {
+            tail
+        } else {
+            SCALE
+                .checked_sub(tail)
+                .ok_or(OnchainError::MagnitudeOverflow)?
+        });
     }
     // mag >= B-break: saturate
     Ok(if x.is_negative() { 0 } else { SCALE })
@@ -451,7 +469,10 @@ impl OnchainOracle {
     /// `(up, down)` where `down = SCALE - up`.
     pub fn binary_price_pair(&self, strike: u64) -> Res<(u64, u64)> {
         let up = self.compute_price(strike)?;
-        Ok((up, SCALE - up))
+        let down = SCALE
+            .checked_sub(up)
+            .ok_or(OnchainError::MagnitudeOverflow)?;
+        Ok((up, down))
     }
 }
 
@@ -739,6 +760,14 @@ mod tests {
             o.compute_price(100 * SCALE),
             Err(OnchainError::WNonPositive)
         );
+    }
+
+    #[test]
+    fn monkey_exp_large_negative_saturates_zero() {
+        // huge negative arg -> k = mag/ln2 >> 128. Must saturate to 0 (chain zeros out),
+        // NOT panic on the u128 `>> k` shift. Regression guard for the negative-branch fix.
+        assert_eq!(exp(&I64::from_parts(500_000_000_000, true)).unwrap(), 0);
+        assert_eq!(exp(&I64::from_parts(MAX_U64, true)).unwrap(), 0);
     }
 
     #[test]
