@@ -40,14 +40,17 @@ docs/specs/2026-06-XX-l0-parity-basis-findings.md ← basis 結論（capture 後
 
 ### 3.2 e2e 層（compute_price / binary_price_pair）
 
+- **OracleSVI 枚舉（sui-architect F1）**：`OracleSVI` 是 shared object，無法用 `getOwnedObjects` 列舉。發現路徑優先序：① `registry` module 的 accessor（pkg 自帶 `registry` 模組，capture 前先拉其 ABI 確認有無 oracle 列表）② 掃近期 `OracleSVIUpdated` events 取 object id ③ Mysten predict-server 訂閱端點。capture bin 實作 ① + ② 其一即可。
 - 抓 capture 當下 testnet 所有 live `OracleSVI` objects，**完整欄位 snapshot 進 fixture**（expiry、spot、forward、a、b、rho、m、sigma、timestamp、settlement_price）。
 - 每個 oracle × ~10 strikes：ATM 附近階梯 + deep ITM/OTM 極端 + settled tie（若有 settled oracle，驗 strict `>` ties-DOWN）。
 - devInspect `oracle::compute_price` 與 `binary_price_pair`，記回傳 u64。
-- 注意 `binary_price_pair` 吃 `&Clock`：devInspect 時鏈上 Clock 即 capture 時刻；fixture 須一併記下該次 devInspect 的 timestamp 語意（若結果依 Clock，需記 clock 值或只 fixture 不依 Clock 的 `compute_price`，capture 時實測決定）。
+- **Clock 語意（sui-architect F3）**：findings doc 顯示 `binary_price_pair(oracle, K, clock)` 的 clock 在數學上未使用（= compute_price + complement），但 lessons 2026-06-03 規定不可信任二手 doc — **capture 前重新 disassemble `oracle.mv` 確認 Clock 沒有 gating（如 expiry assert / staleness check）**。若有 gating：fixture 只收 `compute_price`，`binary_price_pair` 由 Part 1 unit test（complement 恆等式）覆蓋即可。
 
 ### 3.3 傳輸通道
 
-gRPC primary。若 Rust SDK gRPC devInspect 路徑不可用 → fallback testnet JSON-RPC（2026-05-30 實測仍活）。fixture 是 frozen 產物，capture 通道不影響 production 路徑（production 訂閱仍 gRPC-only）。
+- **通道判準（sui-architect F2）**：capture 需要 **per-command BCS return values**（每個 moveCall 的回傳值）。JSON-RPC `devInspectTransactionBlock` 的 `results[].returnValues` 確定支援；gRPC `SimulateTransaction` 是否暴露 command-level outputs 需 capture 時實測。**判準 = 哪個通道給得出 per-command return values 就用哪個**；fixture 是 frozen 產物，capture 通道不影響 production 路徑（production 訂閱仍 gRPC-only）。
+- **批次（F4）**：sweep 把多個 moveCall 打包進同一 PTB（單 PTB 上限 ~1024 commands）減少 round trip；command 順序 deterministic（與 seed 對應），fixture 可重現。
+- **Provenance（F5）**：fixture metadata 記 chain id、pkg id、protocol version、capture timestamp、通道（gRPC/JSON-RPC）。
 
 ## 4. Parity harness（離線，進 CI）
 
