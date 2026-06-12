@@ -1,5 +1,9 @@
 //! Frozen-fixture JSON schema. Shared by the parity harness (via `#[path]` include) and the
 //! capture bin (volarb-sui duplicates the Serialize side — the JSON file format IS the contract).
+//
+// Shared across test targets with different usage (harness reads ret/abort; the basis example
+// reads meta/expiry) — dead_code is expected per-target.
+#![allow(dead_code)]
 
 use serde::Deserialize;
 

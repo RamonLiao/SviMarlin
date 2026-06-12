@@ -1,0 +1,40 @@
+{
+  "meta": {
+    "chain": "selftest",
+    "package": "n/a — values produced by the Rust port itself, NOT chain ground truth",
+    "protocol_version": 0,
+    "captured_at_ms": 0,
+    "channel": "selftest",
+    "seed": 0
+  },
+  "math": [
+    {"func": "sqrt", "args": [4000000000, 1000000000], "neg_flags": [], "ret": 2000000000, "expect_abort": null},
+    {"func": "ln", "args": [0], "neg_flags": [], "ret": null, "expect_abort": 0},
+    {"func": "ln", "args": [500000000], "neg_flags": [], "ret": {"magnitude": 693147180, "is_negative": true}, "expect_abort": null},
+    {"func": "exp", "args": [500000000], "neg_flags": [false], "ret": 1648721267, "expect_abort": null},
+    {"func": "exp", "args": [500000000], "neg_flags": [true], "ret": 606530661, "expect_abort": null},
+    {"func": "exp", "args": [50000000000], "neg_flags": [false], "ret": null, "expect_abort": 1},
+    {"func": "normal_cdf", "args": [500000000], "neg_flags": [false], "ret": 691462461, "expect_abort": null},
+    {"func": "normal_cdf", "args": [500000000], "neg_flags": [true], "ret": 308537539, "expect_abort": null},
+    {"func": "db_mul", "args": [3000000000, 2000000000], "neg_flags": [], "ret": 6000000000, "expect_abort": null},
+    {"func": "db_div", "args": [3000000000, 2000000000], "neg_flags": [], "ret": 1500000000, "expect_abort": null},
+    {"func": "mul_scaled", "args": [1500000000, 2000000000], "neg_flags": [true, false], "ret": {"magnitude": 3000000000, "is_negative": true}, "expect_abort": null},
+    {"func": "div_scaled", "args": [1500000000, 2000000000], "neg_flags": [true, false], "ret": {"magnitude": 750000000, "is_negative": true}, "expect_abort": null},
+    {"func": "div_scaled", "args": [1500000000, 0], "neg_flags": [true, false], "ret": null, "expect_abort": 1},
+    {"func": "square_scaled", "args": [1500000000], "neg_flags": [true], "ret": 2250000000, "expect_abort": null}
+  ],
+  "e2e": [
+    {"oracle_id": "selftest", "forward": 1000000000, "a": 10000000, "b": 50000000,
+     "sigma": 200000000, "rho_mag": 100000000, "rho_neg": true, "m_mag": 0, "m_neg": false,
+     "settlement": null, "expiry_ms": 0, "strike": 1000000000,
+     "ret": 471814012, "expect_abort": null},
+    {"oracle_id": "selftest", "forward": 1000000000, "a": 10000000, "b": 50000000,
+     "sigma": 200000000, "rho_mag": 100000000, "rho_neg": true, "m_mag": 0, "m_neg": false,
+     "settlement": null, "expiry_ms": 0, "strike": 1050000000,
+     "ret": 338934864, "expect_abort": null},
+    {"oracle_id": "selftest-settled-tie", "forward": 1000000000, "a": 10000000, "b": 50000000,
+     "sigma": 200000000, "rho_mag": 100000000, "rho_neg": true, "m_mag": 0, "m_neg": false,
+     "settlement": 1000000000, "expiry_ms": 0, "strike": 1000000000,
+     "ret": 0, "expect_abort": null}
+  ]
+}
