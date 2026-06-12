@@ -145,13 +145,15 @@ impl I64 {
 /// DeepBook `math::mul`: `floor(a*b / 1e9)`, round DOWN, u128 intermediate.
 /// Checked cast-back: Move's `x as u64` aborts on overflow (does NOT wrap) — mirror as
 /// MagnitudeOverflow rather than a silent Rust wrap (lessons.md 2026-06-01).
-fn db_mul(a: u64, b: u64) -> Res<u64> {
+/// Exposed for the L3 parity harness (Part 2). Mirrors chain op-for-op.
+pub fn db_mul(a: u64, b: u64) -> Res<u64> {
     let p = (a as u128) * (b as u128) / (SCALE as u128);
     u64::try_from(p).map_err(|_| OnchainError::MagnitudeOverflow)
 }
 
 /// DeepBook `math::div`: `floor(a*1e9 / b)`, round DOWN. `b == 0` aborts on chain -> DivByZero.
-fn db_div(a: u64, b: u64) -> Res<u64> {
+/// Exposed for the L3 parity harness (Part 2). Mirrors chain op-for-op.
+pub fn db_div(a: u64, b: u64) -> Res<u64> {
     if b == 0 {
         return Err(OnchainError::DivByZero);
     }
@@ -178,7 +180,8 @@ fn exp_series(r: u64) -> Res<u64> {
 
 /// Predict `math::exp(&I64) -> u64` in 1e9-FP.
 /// Positive-arg overflow guard at 23.638153699; `2^k` scaling via bit shift (checked).
-fn exp(x: &I64) -> Res<u64> {
+/// Exposed for the L3 parity harness (Part 2). Mirrors chain op-for-op.
+pub fn exp(x: &I64) -> Res<u64> {
     if x.magnitude() == 0 {
         return Ok(SCALE);
     }
@@ -220,7 +223,8 @@ fn sqrt_u128(a: u128) -> u128 {
 
 /// Predict `math::sqrt(a, b) -> u64`: FP sqrt of `a/b`-ish. `0 < b <= 1e9` else `abort(2)`.
 /// In the oracle path `b == 1e9` (inv == 1) -> `floor(sqrt(a*1e9))`.
-fn sqrt(a: u64, b: u64) -> Res<u64> {
+/// Exposed for the L3 parity harness (Part 2). Mirrors chain op-for-op.
+pub fn sqrt(a: u64, b: u64) -> Res<u64> {
     if b == 0 || b > SCALE {
         return Err(OnchainError::SqrtDomain);
     }
@@ -291,7 +295,8 @@ fn ln_u128(mantissa: u64, shift: u32) -> Res<I64> {
 }
 
 /// Predict `math::ln(x) -> I64`, `x` in 1e9-FP, `x > 0` (else LnZero).
-fn ln(x: u64) -> Res<I64> {
+/// Exposed for the L3 parity harness (Part 2). Mirrors chain op-for-op.
+pub fn ln(x: u64) -> Res<I64> {
     if x == 0 {
         return Err(OnchainError::LnZero);
     }
@@ -358,7 +363,8 @@ fn poly_fold(init: u64, coeffs: &[u64], var: u64) -> Res<u64> {
 }
 
 /// Predict `math::normal_cdf(&I64) -> u64` (probability in 1e9-FP).
-fn normal_cdf(x: &I64) -> Res<u64> {
+/// Exposed for the L3 parity harness (Part 2). Mirrors chain op-for-op.
+pub fn normal_cdf(x: &I64) -> Res<u64> {
     const HALF: u64 = SCALE / 2;
     let mag = x.magnitude();
     if mag < NCDF_A_BREAK {

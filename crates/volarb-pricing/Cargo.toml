@@ -8,3 +8,7 @@ license.workspace = true
 volarb-core.workspace = true
 statrs.workspace = true
 thiserror.workspace = true
+
+[dev-dependencies]
+serde.workspace = true
+serde_json.workspace = true
