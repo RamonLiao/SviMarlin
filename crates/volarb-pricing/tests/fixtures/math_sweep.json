@@ -1,0 +1,2539 @@
+{
+  "meta": {
+    "chain": "testnet",
+    "package": "0xf5ea2b3749c65d6e56507cc35388719aadb28f9cab873696a2f8687f5c785138",
+    "protocol_version": 126,
+    "captured_at_ms": 1781248608068,
+    "channel": "json-rpc",
+    "seed": 42
+  },
+  "math": [
+    {
+      "func": "ln",
+      "args": [
+        0
+      ],
+      "neg_flags": [],
+      "ret": null,
+      "expect_abort": 0
+    },
+    {
+      "func": "ln",
+      "args": [
+        1
+      ],
+      "neg_flags": [],
+      "ret": {
+        "is_negative": true,
+        "magnitude": 20723265817
+      },
+      "expect_abort": null
+    },
+    {
+      "func": "ln",
+      "args": [
+        999999999
+      ],
+      "neg_flags": [],
+      "ret": {
+        "is_negative": false,
+        "magnitude": 0
+      },
+      "expect_abort": null
+    },
+    {
+      "func": "ln",
+      "args": [
+        1000000000
+      ],
+      "neg_flags": [],
+      "ret": {
+        "is_negative": false,
+        "magnitude": 0
+      },
+      "expect_abort": null
+    },
+    {
+      "func": "ln",
+      "args": [
+        1000000001
+      ],
+      "neg_flags": [],
+      "ret": {
+        "is_negative": false,
+        "magnitude": 0
+      },
+      "expect_abort": null
+    },
+    {
+      "func": "ln",
+      "args": [
+        18446744073
+      ],
+      "neg_flags": [],
+      "ret": {
+        "is_negative": false,
+        "magnitude": 2914887877
+      },
+      "expect_abort": null
+    },
+    {
+      "func": "ln",
+      "args": [
+        10520546994
+      ],
+      "neg_flags": [],
+      "ret": {
+        "is_negative": false,
+        "magnitude": 2353330199
+      },
+      "expect_abort": null
+    },
+    {
+      "func": "ln",
+      "args": [
+        71780167021
+      ],
+      "neg_flags": [],
+      "ret": {
+        "is_negative": false,
+        "magnitude": 4273608207
+      },
+      "expect_abort": null
+    },
+    {
+      "func": "ln",
+      "args": [
+        11268512076
+      ],
+      "neg_flags": [],
+      "ret": {
+        "is_negative": false,
+        "magnitude": 2422012290
+      },
+      "expect_abort": null
+    },
+    {
+      "func": "ln",
+      "args": [
+        89956661375
+      ],
+      "neg_flags": [],
+      "ret": {
+        "is_negative": false,
+        "magnitude": 4499328009
+      },
+      "expect_abort": null
+    },
+    {
+      "func": "ln",
+      "args": [
+        32490043766
+      ],
+      "neg_flags": [],
+      "ret": {
+        "is_negative": false,
+        "magnitude": 3480933692
+      },
+      "expect_abort": null
+    },
+    {
+      "func": "ln",
+      "args": [
+        3013946849
+      ],
+      "neg_flags": [],
+      "ret": {
+        "is_negative": false,
+        "magnitude": 1103250463
+      },
+      "expect_abort": null
+    },
+    {
+      "func": "ln",
+      "args": [
+        69518064048
+      ],
+      "neg_flags": [],
+      "ret": {
+        "is_negative": false,
+        "magnitude": 4241586627
+      },
+      "expect_abort": null
+    },
+    {
+      "func": "ln",
+      "args": [
+        50962093587
+      ],
+      "neg_flags": [],
+      "ret": {
+        "is_negative": false,
+        "magnitude": 3931082088
+      },
+      "expect_abort": null
+    },
+    {
+      "func": "ln",
+      "args": [
+        23534012538
+      ],
+      "neg_flags": [],
+      "ret": {
+        "is_negative": false,
+        "magnitude": 3158446712
+      },
+      "expect_abort": null
+    },
+    {
+      "func": "ln",
+      "args": [
+        34992928149
+      ],
+      "neg_flags": [],
+      "ret": {
+        "is_negative": false,
+        "magnitude": 3555145983
+      },
+      "expect_abort": null
+    },
+    {
+      "func": "ln",
+      "args": [
+        16785944660
+      ],
+      "neg_flags": [],
+      "ret": {
+        "is_negative": false,
+        "magnitude": 2820541904
+      },
+      "expect_abort": null
+    },
+    {
+      "func": "ln",
+      "args": [
+        44095911143
+      ],
+      "neg_flags": [],
+      "ret": {
+        "is_negative": false,
+        "magnitude": 3786367055
+      },
+      "expect_abort": null
+    },
+    {
+      "func": "ln",
+      "args": [
+        44849786814
+      ],
+      "neg_flags": [],
+      "ret": {
+        "is_negative": false,
+        "magnitude": 3803318829
+      },
+      "expect_abort": null
+    },
+    {
+      "func": "ln",
+      "args": [
+        52035281033
+      ],
+      "neg_flags": [],
+      "ret": {
+        "is_negative": false,
+        "magnitude": 3951921966
+      },
+      "expect_abort": null
+    },
+    {
+      "func": "ln",
+      "args": [
+        96454308152
+      ],
+      "neg_flags": [],
+      "ret": {
+        "is_negative": false,
+        "magnitude": 4569069399
+      },
+      "expect_abort": null
+    },
+    {
+      "func": "ln",
+      "args": [
+        37408772347
+      ],
+      "neg_flags": [],
+      "ret": {
+        "is_negative": false,
+        "magnitude": 3621905227
+      },
+      "expect_abort": null
+    },
+    {
+      "func": "ln",
+      "args": [
+        6443789122
+      ],
+      "neg_flags": [],
+      "ret": {
+        "is_negative": false,
+        "magnitude": 1863116737
+      },
+      "expect_abort": null
+    },
+    {
+      "func": "ln",
+      "args": [
+        23916966589
+      ],
+      "neg_flags": [],
+      "ret": {
+        "is_negative": false,
+        "magnitude": 3174588102
+      },
+      "expect_abort": null
+    },
+    {
+      "func": "ln",
+      "args": [
+        34568923228
+      ],
+      "neg_flags": [],
+      "ret": {
+        "is_negative": false,
+        "magnitude": 3542955101
+      },
+      "expect_abort": null
+    },
+    {
+      "func": "ln",
+      "args": [
+        83079329359
+      ],
+      "neg_flags": [],
+      "ret": {
+        "is_negative": false,
+        "magnitude": 4419795922
+      },
+      "expect_abort": null
+    },
+    {
+      "func": "exp",
+      "args": [
+        0
+      ],
+      "neg_flags": [
+        false
+      ],
+      "ret": 1000000000,
+      "expect_abort": null
+    },
+    {
+      "func": "exp",
+      "args": [
+        693147180
+      ],
+      "neg_flags": [
+        false
+      ],
+      "ret": 2000000000,
+      "expect_abort": null
+    },
+    {
+      "func": "exp",
+      "args": [
+        693147180
+      ],
+      "neg_flags": [
+        true
+      ],
+      "ret": 500000000,
+      "expect_abort": null
+    },
+    {
+      "func": "exp",
+      "args": [
+        1000000000
+      ],
+      "neg_flags": [
+        false
+      ],
+      "ret": 2718281820,
+      "expect_abort": null
+    },
+    {
+      "func": "exp",
+      "args": [
+        1000000000
+      ],
+      "neg_flags": [
+        true
+      ],
+      "ret": 367879442,
+      "expect_abort": null
+    },
+    {
+      "func": "exp",
+      "args": [
+        30000000000
+      ],
+      "neg_flags": [
+        false
+      ],
+      "ret": null,
+      "expect_abort": 1
+    },
+    {
+      "func": "exp",
+      "args": [
+        30000000000
+      ],
+      "neg_flags": [
+        true
+      ],
+      "ret": 0,
+      "expect_abort": null
+    },
+    {
+      "func": "exp",
+      "args": [
+        50000000000
+      ],
+      "neg_flags": [
+        false
+      ],
+      "ret": null,
+      "expect_abort": 1
+    },
+    {
+      "func": "exp",
+      "args": [
+        50000000000
+      ],
+      "neg_flags": [
+        true
+      ],
+      "ret": 0,
+      "expect_abort": null
+    },
+    {
+      "func": "exp",
+      "args": [
+        200000000000
+      ],
+      "neg_flags": [
+        true
+      ],
+      "ret": 0,
+      "expect_abort": null
+    },
+    {
+      "func": "exp",
+      "args": [
+        2550449035
+      ],
+      "neg_flags": [
+        true
+      ],
+      "ret": 78046612,
+      "expect_abort": null
+    },
+    {
+      "func": "exp",
+      "args": [
+        21925520636
+      ],
+      "neg_flags": [
+        true
+      ],
+      "ret": 0,
+      "expect_abort": null
+    },
+    {
+      "func": "exp",
+      "args": [
+        5039496633
+      ],
+      "neg_flags": [
+        true
+      ],
+      "ret": 6477007,
+      "expect_abort": null
+    },
+    {
+      "func": "exp",
+      "args": [
+        9633067734
+      ],
+      "neg_flags": [
+        true
+      ],
+      "ret": 65525,
+      "expect_abort": null
+    },
+    {
+      "func": "exp",
+      "args": [
+        25242001290
+      ],
+      "neg_flags": [
+        true
+      ],
+      "ret": 0,
+      "expect_abort": null
+    },
+    {
+      "func": "exp",
+      "args": [
+        29068251728
+      ],
+      "neg_flags": [
+        true
+      ],
+      "ret": 0,
+      "expect_abort": null
+    },
+    {
+      "func": "exp",
+      "args": [
+        10128515832
+      ],
+      "neg_flags": [
+        true
+      ],
+      "ret": 39924,
+      "expect_abort": null
+    },
+    {
+      "func": "exp",
+      "args": [
+        13376525414
+      ],
+      "neg_flags": [
+        true
+      ],
+      "ret": 1551,
+      "expect_abort": null
+    },
+    {
+      "func": "exp",
+      "args": [
+        25553123575
+      ],
+      "neg_flags": [
+        true
+      ],
+      "ret": 0,
+      "expect_abort": null
+    },
+    {
+      "func": "exp",
+      "args": [
+        19817987471
+      ],
+      "neg_flags": [
+        true
+      ],
+      "ret": 2,
+      "expect_abort": null
+    },
+    {
+      "func": "exp",
+      "args": [
+        35772374824
+      ],
+      "neg_flags": [
+        true
+      ],
+      "ret": 0,
+      "expect_abort": null
+    },
+    {
+      "func": "exp",
+      "args": [
+        31450283902
+      ],
+      "neg_flags": [
+        true
+      ],
+      "ret": 0,
+      "expect_abort": null
+    },
+    {
+      "func": "exp",
+      "args": [
+        25250911725
+      ],
+      "neg_flags": [
+        true
+      ],
+      "ret": 0,
+      "expect_abort": null
+    },
+    {
+      "func": "exp",
+      "args": [
+        14140202823
+      ],
+      "neg_flags": [
+        true
+      ],
+      "ret": 722,
+      "expect_abort": null
+    },
+    {
+      "func": "exp",
+      "args": [
+        22918705276
+      ],
+      "neg_flags": [
+        true
+      ],
+      "ret": 0,
+      "expect_abort": null
+    },
+    {
+      "func": "exp",
+      "args": [
+        15589012867
+      ],
+      "neg_flags": [
+        true
+      ],
+      "ret": 169,
+      "expect_abort": null
+    },
+    {
+      "func": "exp",
+      "args": [
+        37182884683
+      ],
+      "neg_flags": [
+        true
+      ],
+      "ret": 0,
+      "expect_abort": null
+    },
+    {
+      "func": "exp",
+      "args": [
+        27320472891
+      ],
+      "neg_flags": [
+        true
+      ],
+      "ret": 0,
+      "expect_abort": null
+    },
+    {
+      "func": "exp",
+      "args": [
+        6734868038
+      ],
+      "neg_flags": [
+        true
+      ],
+      "ret": 1188732,
+      "expect_abort": null
+    },
+    {
+      "func": "exp",
+      "args": [
+        17532007685
+      ],
+      "neg_flags": [
+        true
+      ],
+      "ret": 24,
+      "expect_abort": null
+    },
+    {
+      "func": "sqrt",
+      "args": [
+        4000000000,
+        1000000000
+      ],
+      "neg_flags": [],
+      "ret": 2000000000,
+      "expect_abort": null
+    },
+    {
+      "func": "sqrt",
+      "args": [
+        0,
+        1000000000
+      ],
+      "neg_flags": [],
+      "ret": 0,
+      "expect_abort": null
+    },
+    {
+      "func": "sqrt",
+      "args": [
+        1000000000,
+        1000000000
+      ],
+      "neg_flags": [],
+      "ret": 1000000000,
+      "expect_abort": null
+    },
+    {
+      "func": "sqrt",
+      "args": [
+        18446744073,
+        1000000000
+      ],
+      "neg_flags": [],
+      "ret": 4294967295,
+      "expect_abort": null
+    },
+    {
+      "func": "sqrt",
+      "args": [
+        1000000000,
+        0
+      ],
+      "neg_flags": [],
+      "ret": null,
+      "expect_abort": 2
+    },
+    {
+      "func": "sqrt",
+      "args": [
+        1000000000,
+        1000000001
+      ],
+      "neg_flags": [],
+      "ret": null,
+      "expect_abort": 2
+    },
+    {
+      "func": "sqrt",
+      "args": [
+        1000000000,
+        500000000
+      ],
+      "neg_flags": [],
+      "ret": 707106781,
+      "expect_abort": null
+    },
+    {
+      "func": "sqrt",
+      "args": [
+        780473819432387,
+        1000000000
+      ],
+      "neg_flags": [],
+      "ret": 883444293338,
+      "expect_abort": null
+    },
+    {
+      "func": "sqrt",
+      "args": [
+        307377468350814,
+        1000000000
+      ],
+      "neg_flags": [],
+      "ret": 554416331244,
+      "expect_abort": null
+    },
+    {
+      "func": "sqrt",
+      "args": [
+        1051457578054841,
+        1000000000
+      ],
+      "neg_flags": [],
+      "ret": 1025406055206,
+      "expect_abort": null
+    },
+    {
+      "func": "sqrt",
+      "args": [
+        560839359646479,
+        1000000000
+      ],
+      "neg_flags": [],
+      "ret": 748892088118,
+      "expect_abort": null
+    },
+    {
+      "func": "sqrt",
+      "args": [
+        508712925343300,
+        1000000000
+      ],
+      "neg_flags": [],
+      "ret": 713241141089,
+      "expect_abort": null
+    },
+    {
+      "func": "sqrt",
+      "args": [
+        51017789593354,
+        1000000000
+      ],
+      "neg_flags": [],
+      "ret": 225871179200,
+      "expect_abort": null
+    },
+    {
+      "func": "sqrt",
+      "args": [
+        470416563072610,
+        1000000000
+      ],
+      "neg_flags": [],
+      "ret": 685869202598,
+      "expect_abort": null
+    },
+    {
+      "func": "sqrt",
+      "args": [
+        396655441198005,
+        1000000000
+      ],
+      "neg_flags": [],
+      "ret": 629805875804,
+      "expect_abort": null
+    },
+    {
+      "func": "sqrt",
+      "args": [
+        933868716637951,
+        1000000000
+      ],
+      "neg_flags": [],
+      "ret": 966368830539,
+      "expect_abort": null
+    },
+    {
+      "func": "sqrt",
+      "args": [
+        221216900923875,
+        1000000000
+      ],
+      "neg_flags": [],
+      "ret": 470337007818,
+      "expect_abort": null
+    },
+    {
+      "func": "sqrt",
+      "args": [
+        758281546109613,
+        1000000000
+      ],
+      "neg_flags": [],
+      "ret": 870793630035,
+      "expect_abort": null
+    },
+    {
+      "func": "sqrt",
+      "args": [
+        917027141638548,
+        1000000000
+      ],
+      "neg_flags": [],
+      "ret": 957615341167,
+      "expect_abort": null
+    },
+    {
+      "func": "sqrt",
+      "args": [
+        364014718105926,
+        1000000000
+      ],
+      "neg_flags": [],
+      "ret": 603336322548,
+      "expect_abort": null
+    },
+    {
+      "func": "sqrt",
+      "args": [
+        825371879236243,
+        1000000000
+      ],
+      "neg_flags": [],
+      "ret": 908499795947,
+      "expect_abort": null
+    },
+    {
+      "func": "sqrt",
+      "args": [
+        1109171508660993,
+        1000000000
+      ],
+      "neg_flags": [],
+      "ret": 1053172117301,
+      "expect_abort": null
+    },
+    {
+      "func": "sqrt",
+      "args": [
+        745372481193658,
+        1000000000
+      ],
+      "neg_flags": [],
+      "ret": 863349570680,
+      "expect_abort": null
+    },
+    {
+      "func": "sqrt",
+      "args": [
+        370681120475057,
+        1000000000
+      ],
+      "neg_flags": [],
+      "ret": 608835873183,
+      "expect_abort": null
+    },
+    {
+      "func": "sqrt",
+      "args": [
+        679001829347255,
+        1000000000
+      ],
+      "neg_flags": [],
+      "ret": 824015672998,
+      "expect_abort": null
+    },
+    {
+      "func": "sqrt",
+      "args": [
+        814459921549842,
+        1000000000
+      ],
+      "neg_flags": [],
+      "ret": 902474332903,
+      "expect_abort": null
+    },
+    {
+      "func": "sqrt",
+      "args": [
+        272459427343863,
+        1000000000
+      ],
+      "neg_flags": [],
+      "ret": 521976462442,
+      "expect_abort": null
+    },
+    {
+      "func": "normal_cdf",
+      "args": [
+        0
+      ],
+      "neg_flags": [
+        false
+      ],
+      "ret": 500000000,
+      "expect_abort": null
+    },
+    {
+      "func": "normal_cdf",
+      "args": [
+        0
+      ],
+      "neg_flags": [
+        true
+      ],
+      "ret": 500000000,
+      "expect_abort": null
+    },
+    {
+      "func": "normal_cdf",
+      "args": [
+        1
+      ],
+      "neg_flags": [
+        false
+      ],
+      "ret": 500000000,
+      "expect_abort": null
+    },
+    {
+      "func": "normal_cdf",
+      "args": [
+        1
+      ],
+      "neg_flags": [
+        true
+      ],
+      "ret": 500000000,
+      "expect_abort": null
+    },
+    {
+      "func": "normal_cdf",
+      "args": [
+        500000000
+      ],
+      "neg_flags": [
+        false
+      ],
+      "ret": 691462461,
+      "expect_abort": null
+    },
+    {
+      "func": "normal_cdf",
+      "args": [
+        500000000
+      ],
+      "neg_flags": [
+        true
+      ],
+      "ret": 308537539,
+      "expect_abort": null
+    },
+    {
+      "func": "normal_cdf",
+      "args": [
+        1000000000
+      ],
+      "neg_flags": [
+        false
+      ],
+      "ret": 841344747,
+      "expect_abort": null
+    },
+    {
+      "func": "normal_cdf",
+      "args": [
+        1000000000
+      ],
+      "neg_flags": [
+        true
+      ],
+      "ret": 158655253,
+      "expect_abort": null
+    },
+    {
+      "func": "normal_cdf",
+      "args": [
+        2000000000
+      ],
+      "neg_flags": [
+        false
+      ],
+      "ret": 977249869,
+      "expect_abort": null
+    },
+    {
+      "func": "normal_cdf",
+      "args": [
+        2000000000
+      ],
+      "neg_flags": [
+        true
+      ],
+      "ret": 22750131,
+      "expect_abort": null
+    },
+    {
+      "func": "normal_cdf",
+      "args": [
+        4000000000
+      ],
+      "neg_flags": [
+        false
+      ],
+      "ret": 999968329,
+      "expect_abort": null
+    },
+    {
+      "func": "normal_cdf",
+      "args": [
+        4000000000
+      ],
+      "neg_flags": [
+        true
+      ],
+      "ret": 31671,
+      "expect_abort": null
+    },
+    {
+      "func": "normal_cdf",
+      "args": [
+        5656854248
+      ],
+      "neg_flags": [
+        false
+      ],
+      "ret": 999999993,
+      "expect_abort": null
+    },
+    {
+      "func": "normal_cdf",
+      "args": [
+        5656854248
+      ],
+      "neg_flags": [
+        true
+      ],
+      "ret": 7,
+      "expect_abort": null
+    },
+    {
+      "func": "normal_cdf",
+      "args": [
+        5656854249
+      ],
+      "neg_flags": [
+        false
+      ],
+      "ret": 1000000000,
+      "expect_abort": null
+    },
+    {
+      "func": "normal_cdf",
+      "args": [
+        5656854249
+      ],
+      "neg_flags": [
+        true
+      ],
+      "ret": 0,
+      "expect_abort": null
+    },
+    {
+      "func": "normal_cdf",
+      "args": [
+        5656854250
+      ],
+      "neg_flags": [
+        false
+      ],
+      "ret": 1000000000,
+      "expect_abort": null
+    },
+    {
+      "func": "normal_cdf",
+      "args": [
+        5656854250
+      ],
+      "neg_flags": [
+        true
+      ],
+      "ret": 0,
+      "expect_abort": null
+    },
+    {
+      "func": "normal_cdf",
+      "args": [
+        8000000000
+      ],
+      "neg_flags": [
+        false
+      ],
+      "ret": 1000000000,
+      "expect_abort": null
+    },
+    {
+      "func": "normal_cdf",
+      "args": [
+        8000000000
+      ],
+      "neg_flags": [
+        true
+      ],
+      "ret": 0,
+      "expect_abort": null
+    },
+    {
+      "func": "normal_cdf",
+      "args": [
+        3815414384
+      ],
+      "neg_flags": [
+        true
+      ],
+      "ret": 67977,
+      "expect_abort": null
+    },
+    {
+      "func": "normal_cdf",
+      "args": [
+        6121254279
+      ],
+      "neg_flags": [
+        true
+      ],
+      "ret": 0,
+      "expect_abort": null
+    },
+    {
+      "func": "normal_cdf",
+      "args": [
+        347507104
+      ],
+      "neg_flags": [
+        true
+      ],
+      "ret": 364105192,
+      "expect_abort": null
+    },
+    {
+      "func": "normal_cdf",
+      "args": [
+        2218452334
+      ],
+      "neg_flags": [
+        true
+      ],
+      "ret": 13262002,
+      "expect_abort": null
+    },
+    {
+      "func": "normal_cdf",
+      "args": [
+        1790103472
+      ],
+      "neg_flags": [
+        true
+      ],
+      "ret": 36718639,
+      "expect_abort": null
+    },
+    {
+      "func": "normal_cdf",
+      "args": [
+        4003717086
+      ],
+      "neg_flags": [
+        true
+      ],
+      "ret": 31177,
+      "expect_abort": null
+    },
+    {
+      "func": "normal_cdf",
+      "args": [
+        1502541528
+      ],
+      "neg_flags": [
+        true
+      ],
+      "ret": 66478655,
+      "expect_abort": null
+    },
+    {
+      "func": "normal_cdf",
+      "args": [
+        707332924
+      ],
+      "neg_flags": [
+        true
+      ],
+      "ret": 239679805,
+      "expect_abort": null
+    },
+    {
+      "func": "normal_cdf",
+      "args": [
+        6029603316
+      ],
+      "neg_flags": [
+        true
+      ],
+      "ret": 0,
+      "expect_abort": null
+    },
+    {
+      "func": "normal_cdf",
+      "args": [
+        4222092166
+      ],
+      "neg_flags": [
+        true
+      ],
+      "ret": 12102,
+      "expect_abort": null
+    },
+    {
+      "func": "normal_cdf",
+      "args": [
+        5779880488
+      ],
+      "neg_flags": [
+        true
+      ],
+      "ret": 0,
+      "expect_abort": null
+    },
+    {
+      "func": "normal_cdf",
+      "args": [
+        1551905744
+      ],
+      "neg_flags": [
+        true
+      ],
+      "ret": 60342389,
+      "expect_abort": null
+    },
+    {
+      "func": "normal_cdf",
+      "args": [
+        3500317200
+      ],
+      "neg_flags": [
+        true
+      ],
+      "ret": 232352,
+      "expect_abort": null
+    },
+    {
+      "func": "normal_cdf",
+      "args": [
+        5858137979
+      ],
+      "neg_flags": [
+        true
+      ],
+      "ret": 0,
+      "expect_abort": null
+    },
+    {
+      "func": "normal_cdf",
+      "args": [
+        973949181
+      ],
+      "neg_flags": [
+        true
+      ],
+      "ret": 165040886,
+      "expect_abort": null
+    },
+    {
+      "func": "normal_cdf",
+      "args": [
+        5071351305
+      ],
+      "neg_flags": [
+        true
+      ],
+      "ret": 197,
+      "expect_abort": null
+    },
+    {
+      "func": "normal_cdf",
+      "args": [
+        3259650637
+      ],
+      "neg_flags": [
+        true
+      ],
+      "ret": 557747,
+      "expect_abort": null
+    },
+    {
+      "func": "normal_cdf",
+      "args": [
+        837972460
+      ],
+      "neg_flags": [
+        true
+      ],
+      "ret": 201023085,
+      "expect_abort": null
+    },
+    {
+      "func": "normal_cdf",
+      "args": [
+        5434112665
+      ],
+      "neg_flags": [
+        true
+      ],
+      "ret": 27,
+      "expect_abort": null
+    },
+    {
+      "func": "normal_cdf",
+      "args": [
+        5142701041
+      ],
+      "neg_flags": [
+        true
+      ],
+      "ret": 135,
+      "expect_abort": null
+    },
+    {
+      "func": "normal_cdf",
+      "args": [
+        4350273343
+      ],
+      "neg_flags": [
+        true
+      ],
+      "ret": 6798,
+      "expect_abort": null
+    },
+    {
+      "func": "normal_cdf",
+      "args": [
+        4210273466
+      ],
+      "neg_flags": [
+        true
+      ],
+      "ret": 12753,
+      "expect_abort": null
+    },
+    {
+      "func": "normal_cdf",
+      "args": [
+        6108086543
+      ],
+      "neg_flags": [
+        true
+      ],
+      "ret": 0,
+      "expect_abort": null
+    },
+    {
+      "func": "normal_cdf",
+      "args": [
+        3545123543
+      ],
+      "neg_flags": [
+        true
+      ],
+      "ret": 196214,
+      "expect_abort": null
+    },
+    {
+      "func": "normal_cdf",
+      "args": [
+        3703115422
+      ],
+      "neg_flags": [
+        true
+      ],
+      "ret": 106483,
+      "expect_abort": null
+    },
+    {
+      "func": "normal_cdf",
+      "args": [
+        3616196987
+      ],
+      "neg_flags": [
+        true
+      ],
+      "ret": 149481,
+      "expect_abort": null
+    },
+    {
+      "func": "normal_cdf",
+      "args": [
+        1187152050
+      ],
+      "neg_flags": [
+        true
+      ],
+      "ret": 117583824,
+      "expect_abort": null
+    },
+    {
+      "func": "normal_cdf",
+      "args": [
+        1169412281
+      ],
+      "neg_flags": [
+        true
+      ],
+      "ret": 121118782,
+      "expect_abort": null
+    },
+    {
+      "func": "normal_cdf",
+      "args": [
+        732364347
+      ],
+      "neg_flags": [
+        true
+      ],
+      "ret": 231973107,
+      "expect_abort": null
+    },
+    {
+      "func": "normal_cdf",
+      "args": [
+        686399141
+      ],
+      "neg_flags": [
+        true
+      ],
+      "ret": 246230723,
+      "expect_abort": null
+    },
+    {
+      "func": "mul_scaled",
+      "args": [
+        0,
+        1000000000
+      ],
+      "neg_flags": [
+        false,
+        false
+      ],
+      "ret": {
+        "is_negative": false,
+        "magnitude": 0
+      },
+      "expect_abort": null
+    },
+    {
+      "func": "div_scaled",
+      "args": [
+        0,
+        1000000000
+      ],
+      "neg_flags": [
+        false,
+        false
+      ],
+      "ret": {
+        "is_negative": false,
+        "magnitude": 0
+      },
+      "expect_abort": null
+    },
+    {
+      "func": "mul_scaled",
+      "args": [
+        1000000000,
+        1000000000
+      ],
+      "neg_flags": [
+        true,
+        true
+      ],
+      "ret": {
+        "is_negative": false,
+        "magnitude": 1000000000
+      },
+      "expect_abort": null
+    },
+    {
+      "func": "div_scaled",
+      "args": [
+        1000000000,
+        1000000000
+      ],
+      "neg_flags": [
+        true,
+        true
+      ],
+      "ret": {
+        "is_negative": false,
+        "magnitude": 1000000000
+      },
+      "expect_abort": null
+    },
+    {
+      "func": "mul_scaled",
+      "args": [
+        18446744073709551615,
+        18446744073709551615
+      ],
+      "neg_flags": [
+        false,
+        false
+      ],
+      "ret": null,
+      "expect_abort": 0
+    },
+    {
+      "func": "div_scaled",
+      "args": [
+        18446744073709551615,
+        18446744073709551615
+      ],
+      "neg_flags": [
+        false,
+        false
+      ],
+      "ret": {
+        "is_negative": false,
+        "magnitude": 1000000000
+      },
+      "expect_abort": null
+    },
+    {
+      "func": "mul_scaled",
+      "args": [
+        1000000000,
+        0
+      ],
+      "neg_flags": [
+        false,
+        false
+      ],
+      "ret": {
+        "is_negative": false,
+        "magnitude": 0
+      },
+      "expect_abort": null
+    },
+    {
+      "func": "div_scaled",
+      "args": [
+        1000000000,
+        0
+      ],
+      "neg_flags": [
+        false,
+        false
+      ],
+      "ret": null,
+      "expect_abort": 1
+    },
+    {
+      "func": "mul_scaled",
+      "args": [
+        495563737095,
+        840458052361
+      ],
+      "neg_flags": [
+        false,
+        true
+      ],
+      "ret": {
+        "is_negative": true,
+        "magnitude": 416500533299602
+      },
+      "expect_abort": null
+    },
+    {
+      "func": "div_scaled",
+      "args": [
+        495563737095,
+        840458052361
+      ],
+      "neg_flags": [
+        false,
+        true
+      ],
+      "ret": {
+        "is_negative": true,
+        "magnitude": 589635301
+      },
+      "expect_abort": null
+    },
+    {
+      "func": "square_scaled",
+      "args": [
+        495563737095
+      ],
+      "neg_flags": [
+        false
+      ],
+      "ret": 245583417523562,
+      "expect_abort": null
+    },
+    {
+      "func": "db_mul",
+      "args": [
+        495563737095,
+        840458052361
+      ],
+      "neg_flags": [],
+      "ret": 416500533299602,
+      "expect_abort": null
+    },
+    {
+      "func": "db_div",
+      "args": [
+        495563737095,
+        840458052361
+      ],
+      "neg_flags": [],
+      "ret": 589635301,
+      "expect_abort": null
+    },
+    {
+      "func": "mul_scaled",
+      "args": [
+        135835909364,
+        253355285821
+      ],
+      "neg_flags": [
+        false,
+        true
+      ],
+      "ret": {
+        "is_negative": true,
+        "magnitude": 34414745641671
+      },
+      "expect_abort": null
+    },
+    {
+      "func": "div_scaled",
+      "args": [
+        135835909364,
+        253355285821
+      ],
+      "neg_flags": [
+        false,
+        true
+      ],
+      "ret": {
+        "is_negative": true,
+        "magnitude": 536147919
+      },
+      "expect_abort": null
+    },
+    {
+      "func": "square_scaled",
+      "args": [
+        135835909364
+      ],
+      "neg_flags": [
+        false
+      ],
+      "ret": 18451394272744,
+      "expect_abort": null
+    },
+    {
+      "func": "db_mul",
+      "args": [
+        135835909364,
+        253355285821
+      ],
+      "neg_flags": [],
+      "ret": 34414745641671,
+      "expect_abort": null
+    },
+    {
+      "func": "db_div",
+      "args": [
+        135835909364,
+        253355285821
+      ],
+      "neg_flags": [],
+      "ret": 536147919,
+      "expect_abort": null
+    },
+    {
+      "func": "mul_scaled",
+      "args": [
+        606541116190,
+        437610599089
+      ],
+      "neg_flags": [
+        false,
+        true
+      ],
+      "ret": {
+        "is_negative": true,
+        "magnitude": 265428821228016
+      },
+      "expect_abort": null
+    },
+    {
+      "func": "div_scaled",
+      "args": [
+        606541116190,
+        437610599089
+      ],
+      "neg_flags": [
+        false,
+        true
+      ],
+      "ret": {
+        "is_negative": true,
+        "magnitude": 1386029308
+      },
+      "expect_abort": null
+    },
+    {
+      "func": "square_scaled",
+      "args": [
+        606541116190
+      ],
+      "neg_flags": [
+        false
+      ],
+      "ret": 367892125629011,
+      "expect_abort": null
+    },
+    {
+      "func": "db_mul",
+      "args": [
+        606541116190,
+        437610599089
+      ],
+      "neg_flags": [],
+      "ret": 265428821228016,
+      "expect_abort": null
+    },
+    {
+      "func": "db_div",
+      "args": [
+        606541116190,
+        437610599089
+      ],
+      "neg_flags": [],
+      "ret": 1386029308,
+      "expect_abort": null
+    },
+    {
+      "func": "mul_scaled",
+      "args": [
+        660659193270,
+        10426791781
+      ],
+      "neg_flags": [
+        false,
+        true
+      ],
+      "ret": {
+        "is_negative": true,
+        "magnitude": 6888555846429
+      },
+      "expect_abort": null
+    },
+    {
+      "func": "div_scaled",
+      "args": [
+        660659193270,
+        10426791781
+      ],
+      "neg_flags": [
+        false,
+        true
+      ],
+      "ret": {
+        "is_negative": true,
+        "magnitude": 63361694291
+      },
+      "expect_abort": null
+    },
+    {
+      "func": "square_scaled",
+      "args": [
+        660659193270
+      ],
+      "neg_flags": [
+        false
+      ],
+      "ret": 436470569652167,
+      "expect_abort": null
+    },
+    {
+      "func": "db_mul",
+      "args": [
+        660659193270,
+        10426791781
+      ],
+      "neg_flags": [],
+      "ret": 6888555846429,
+      "expect_abort": null
+    },
+    {
+      "func": "db_div",
+      "args": [
+        660659193270,
+        10426791781
+      ],
+      "neg_flags": [],
+      "ret": 63361694291,
+      "expect_abort": null
+    },
+    {
+      "func": "mul_scaled",
+      "args": [
+        1069045553811,
+        999251279705
+      ],
+      "neg_flags": [
+        false,
+        true
+      ],
+      "ret": {
+        "is_negative": true,
+        "magnitude": 1068245137708582
+      },
+      "expect_abort": null
+    },
+    {
+      "func": "div_scaled",
+      "args": [
+        1069045553811,
+        999251279705
+      ],
+      "neg_flags": [
+        false,
+        true
+      ],
+      "ret": {
+        "is_negative": true,
+        "magnitude": 1069846569
+      },
+      "expect_abort": null
+    },
+    {
+      "func": "square_scaled",
+      "args": [
+        1069045553811
+      ],
+      "neg_flags": [
+        false
+      ],
+      "ret": 1142858396123067,
+      "expect_abort": null
+    },
+    {
+      "func": "db_mul",
+      "args": [
+        1069045553811,
+        999251279705
+      ],
+      "neg_flags": [],
+      "ret": 1068245137708582,
+      "expect_abort": null
+    },
+    {
+      "func": "db_div",
+      "args": [
+        1069045553811,
+        999251279705
+      ],
+      "neg_flags": [],
+      "ret": 1069846569,
+      "expect_abort": null
+    },
+    {
+      "func": "mul_scaled",
+      "args": [
+        701251374971,
+        794084531853
+      ],
+      "neg_flags": [
+        false,
+        true
+      ],
+      "ret": {
+        "is_negative": true,
+        "magnitude": 556852869805119
+      },
+      "expect_abort": null
+    },
+    {
+      "func": "div_scaled",
+      "args": [
+        701251374971,
+        794084531853
+      ],
+      "neg_flags": [
+        false,
+        true
+      ],
+      "ret": {
+        "is_negative": true,
+        "magnitude": 883094112
+      },
+      "expect_abort": null
+    },
+    {
+      "func": "square_scaled",
+      "args": [
+        701251374971
+      ],
+      "neg_flags": [
+        false
+      ],
+      "ret": 491753490898718,
+      "expect_abort": null
+    },
+    {
+      "func": "db_mul",
+      "args": [
+        701251374971,
+        794084531853
+      ],
+      "neg_flags": [],
+      "ret": 556852869805119,
+      "expect_abort": null
+    },
+    {
+      "func": "db_div",
+      "args": [
+        701251374971,
+        794084531853
+      ],
+      "neg_flags": [],
+      "ret": 883094112,
+      "expect_abort": null
+    },
+    {
+      "func": "mul_scaled",
+      "args": [
+        165834227333,
+        260060137729
+      ],
+      "neg_flags": [
+        false,
+        true
+      ],
+      "ret": {
+        "is_negative": true,
+        "magnitude": 43126872000402
+      },
+      "expect_abort": null
+    },
+    {
+      "func": "div_scaled",
+      "args": [
+        165834227333,
+        260060137729
+      ],
+      "neg_flags": [
+        false,
+        true
+      ],
+      "ret": {
+        "is_negative": true,
+        "magnitude": 637676457
+      },
+      "expect_abort": null
+    },
+    {
+      "func": "square_scaled",
+      "args": [
+        165834227333
+      ],
+      "neg_flags": [
+        false
+      ],
+      "ret": 27500990955133,
+      "expect_abort": null
+    },
+    {
+      "func": "db_mul",
+      "args": [
+        165834227333,
+        260060137729
+      ],
+      "neg_flags": [],
+      "ret": 43126872000402,
+      "expect_abort": null
+    },
+    {
+      "func": "db_div",
+      "args": [
+        165834227333,
+        260060137729
+      ],
+      "neg_flags": [],
+      "ret": 637676457,
+      "expect_abort": null
+    },
+    {
+      "func": "mul_scaled",
+      "args": [
+        436615197346,
+        398824174261
+      ],
+      "neg_flags": [
+        false,
+        true
+      ],
+      "ret": {
+        "is_negative": true,
+        "magnitude": 174132695551322
+      },
+      "expect_abort": null
+    },
+    {
+      "func": "div_scaled",
+      "args": [
+        436615197346,
+        398824174261
+      ],
+      "neg_flags": [
+        false,
+        true
+      ],
+      "ret": {
+        "is_negative": true,
+        "magnitude": 1094756099
+      },
+      "expect_abort": null
+    },
+    {
+      "func": "square_scaled",
+      "args": [
+        436615197346
+      ],
+      "neg_flags": [
+        false
+      ],
+      "ret": 190632830553486,
+      "expect_abort": null
+    },
+    {
+      "func": "db_mul",
+      "args": [
+        436615197346,
+        398824174261
+      ],
+      "neg_flags": [],
+      "ret": 174132695551322,
+      "expect_abort": null
+    },
+    {
+      "func": "db_div",
+      "args": [
+        436615197346,
+        398824174261
+      ],
+      "neg_flags": [],
+      "ret": 1094756099,
+      "expect_abort": null
+    },
+    {
+      "func": "mul_scaled",
+      "args": [
+        385146402039,
+        402612244393
+      ],
+      "neg_flags": [
+        false,
+        true
+      ],
+      "ret": {
+        "is_negative": true,
+        "magnitude": 155064657344810
+      },
+      "expect_abort": null
+    },
+    {
+      "func": "div_scaled",
+      "args": [
+        385146402039,
+        402612244393
+      ],
+      "neg_flags": [
+        false,
+        true
+      ],
+      "ret": {
+        "is_negative": true,
+        "magnitude": 956618700
+      },
+      "expect_abort": null
+    },
+    {
+      "func": "square_scaled",
+      "args": [
+        385146402039
+      ],
+      "neg_flags": [
+        false
+      ],
+      "ret": 148337751003587,
+      "expect_abort": null
+    },
+    {
+      "func": "db_mul",
+      "args": [
+        385146402039,
+        402612244393
+      ],
+      "neg_flags": [],
+      "ret": 155064657344810,
+      "expect_abort": null
+    },
+    {
+      "func": "db_div",
+      "args": [
+        385146402039,
+        402612244393
+      ],
+      "neg_flags": [],
+      "ret": 956618700,
+      "expect_abort": null
+    },
+    {
+      "func": "mul_scaled",
+      "args": [
+        1006355164515,
+        46096683997
+      ],
+      "neg_flags": [
+        false,
+        true
+      ],
+      "ret": {
+        "is_negative": true,
+        "magnitude": 46389636007396
+      },
+      "expect_abort": null
+    },
+    {
+      "func": "div_scaled",
+      "args": [
+        1006355164515,
+        46096683997
+      ],
+      "neg_flags": [
+        false,
+        true
+      ],
+      "ret": {
+        "is_negative": true,
+        "magnitude": 21831400379
+      },
+      "expect_abort": null
+    },
+    {
+      "func": "square_scaled",
+      "args": [
+        1006355164515
+      ],
+      "neg_flags": [
+        false
+      ],
+      "ret": 1012750717146012,
+      "expect_abort": null
+    },
+    {
+      "func": "db_mul",
+      "args": [
+        1006355164515,
+        46096683997
+      ],
+      "neg_flags": [],
+      "ret": 46389636007396,
+      "expect_abort": null
+    },
+    {
+      "func": "db_div",
+      "args": [
+        1006355164515,
+        46096683997
+      ],
+      "neg_flags": [],
+      "ret": 21831400379,
+      "expect_abort": null
+    },
+    {
+      "func": "mul_scaled",
+      "args": [
+        245216582228,
+        1059978392401
+      ],
+      "neg_flags": [
+        false,
+        true
+      ],
+      "ret": {
+        "is_negative": true,
+        "magnitude": 259924278620103
+      },
+      "expect_abort": null
+    },
+    {
+      "func": "div_scaled",
+      "args": [
+        245216582228,
+        1059978392401
+      ],
+      "neg_flags": [
+        false,
+        true
+      ],
+      "ret": {
+        "is_negative": true,
+        "magnitude": 231341114
+      },
+      "expect_abort": null
+    },
+    {
+      "func": "square_scaled",
+      "args": [
+        245216582228
+      ],
+      "neg_flags": [
+        false
+      ],
+      "ret": 60131172199581,
+      "expect_abort": null
+    },
+    {
+      "func": "db_mul",
+      "args": [
+        245216582228,
+        1059978392401
+      ],
+      "neg_flags": [],
+      "ret": 259924278620103,
+      "expect_abort": null
+    },
+    {
+      "func": "db_div",
+      "args": [
+        245216582228,
+        1059978392401
+      ],
+      "neg_flags": [],
+      "ret": 231341114,
+      "expect_abort": null
+    },
+    {
+      "func": "mul_scaled",
+      "args": [
+        43079232970,
+        99851952645
+      ],
+      "neg_flags": [
+        false,
+        true
+      ],
+      "ret": {
+        "is_negative": true,
+        "magnitude": 4301545530503
+      },
+      "expect_abort": null
+    },
+    {
+      "func": "div_scaled",
+      "args": [
+        43079232970,
+        99851952645
+      ],
+      "neg_flags": [
+        false,
+        true
+      ],
+      "ret": {
+        "is_negative": true,
+        "magnitude": 431431051
+      },
+      "expect_abort": null
+    },
+    {
+      "func": "square_scaled",
+      "args": [
+        43079232970
+      ],
+      "neg_flags": [
+        false
+      ],
+      "ret": 1855820313283,
+      "expect_abort": null
+    },
+    {
+      "func": "db_mul",
+      "args": [
+        43079232970,
+        99851952645
+      ],
+      "neg_flags": [],
+      "ret": 4301545530503,
+      "expect_abort": null
+    },
+    {
+      "func": "db_div",
+      "args": [
+        43079232970,
+        99851952645
+      ],
+      "neg_flags": [],
+      "ret": 431431051,
+      "expect_abort": null
+    },
+    {
+      "func": "mul_scaled",
+      "args": [
+        563232841562,
+        125771027449
+      ],
+      "neg_flags": [
+        false,
+        true
+      ],
+      "ret": {
+        "is_negative": true,
+        "magnitude": 70838373176272
+      },
+      "expect_abort": null
+    },
+    {
+      "func": "div_scaled",
+      "args": [
+        563232841562,
+        125771027449
+      ],
+      "neg_flags": [
+        false,
+        true
+      ],
+      "ret": {
+        "is_negative": true,
+        "magnitude": 4478239965
+      },
+      "expect_abort": null
+    },
+    {
+      "func": "square_scaled",
+      "args": [
+        563232841562
+      ],
+      "neg_flags": [
+        false
+      ],
+      "ret": 317231233814004,
+      "expect_abort": null
+    },
+    {
+      "func": "db_mul",
+      "args": [
+        563232841562,
+        125771027449
+      ],
+      "neg_flags": [],
+      "ret": 70838373176272,
+      "expect_abort": null
+    },
+    {
+      "func": "db_div",
+      "args": [
+        563232841562,
+        125771027449
+      ],
+      "neg_flags": [],
+      "ret": 4478239965,
+      "expect_abort": null
+    },
+    {
+      "func": "mul_scaled",
+      "args": [
+        622429717392,
+        278107880749
+      ],
+      "neg_flags": [
+        false,
+        true
+      ],
+      "ret": {
+        "is_negative": true,
+        "magnitude": 173102609619088
+      },
+      "expect_abort": null
+    },
+    {
+      "func": "div_scaled",
+      "args": [
+        622429717392,
+        278107880749
+      ],
+      "neg_flags": [
+        false,
+        true
+      ],
+      "ret": {
+        "is_negative": true,
+        "magnitude": 2238087305
+      },
+      "expect_abort": null
+    },
+    {
+      "func": "square_scaled",
+      "args": [
+        622429717392
+      ],
+      "neg_flags": [
+        false
+      ],
+      "ret": 387418753092684,
+      "expect_abort": null
+    },
+    {
+      "func": "db_mul",
+      "args": [
+        622429717392,
+        278107880749
+      ],
+      "neg_flags": [],
+      "ret": 173102609619088,
+      "expect_abort": null
+    },
+    {
+      "func": "db_div",
+      "args": [
+        622429717392,
+        278107880749
+      ],
+      "neg_flags": [],
+      "ret": 2238087305,
+      "expect_abort": null
+    },
+    {
+      "func": "mul_scaled",
+      "args": [
+        94368391718,
+        1040195555745
+      ],
+      "neg_flags": [
+        false,
+        true
+      ],
+      "ret": {
+        "is_negative": true,
+        "magnitude": 98161581667866
+      },
+      "expect_abort": null
+    },
+    {
+      "func": "div_scaled",
+      "args": [
+        94368391718,
+        1040195555745
+      ],
+      "neg_flags": [
+        false,
+        true
+      ],
+      "ret": {
+        "is_negative": true,
+        "magnitude": 90721779
+      },
+      "expect_abort": null
+    },
+    {
+      "func": "square_scaled",
+      "args": [
+        94368391718
+      ],
+      "neg_flags": [
+        false
+      ],
+      "ret": 8905393355441,
+      "expect_abort": null
+    },
+    {
+      "func": "db_mul",
+      "args": [
+        94368391718,
+        1040195555745
+      ],
+      "neg_flags": [],
+      "ret": 98161581667866,
+      "expect_abort": null
+    },
+    {
+      "func": "db_div",
+      "args": [
+        94368391718,
+        1040195555745
+      ],
+      "neg_flags": [],
+      "ret": 90721779,
+      "expect_abort": null
+    }
+  ],
+  "e2e": []
+}
