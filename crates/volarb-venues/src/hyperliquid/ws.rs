@@ -52,8 +52,13 @@ async fn connect_and_stream(ws_url: String, coin: String) -> BoxStream<'static, 
 }
 
 /// Parse a WS `l2Book` data frame into a `QuoteEvent`. Returns None for non-data frames
-/// (subscriptionResponse, pong) or malformed payloads. Strike/expiry are unknown from the WS
-/// frame alone, so we leave them zeroed — Router correlates by `venue_market`.
+/// (subscriptionResponse, pong) or malformed payloads.
+///
+/// ⚠️ pt1 LIMITATION (TODO #6 pt2): `strike`/`expiry` are emitted as `0` placeholders — the WS
+/// frame carries only the `venue_market` string, and name→(strike,expiry) derivation is deferred
+/// (YAGNI this round; no Router consumer exists yet). Consumers MUST correlate by `venue_market`,
+/// NOT by strike/expiry, until pt2 lands real coordinates. Single hardcoded `<dex>:BTCHOURLY`
+/// subscription is likewise a pt1 channel-proof, not the full multi-market stream.
 pub fn parse_l2_event(txt: &str, coin: &str) -> Option<QuoteEvent> {
     use super::info::{L2Book, best_bid_ask};
     use crate::MarketRef;

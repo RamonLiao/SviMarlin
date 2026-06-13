@@ -118,9 +118,13 @@ impl VenueAdapter for HyperliquidAdapter {
     async fn position(&self, _market: MarketRef) -> Result<Option<ExtPosition>, VenueError> {
         // Read-only clearinghouseState; no signing. Requires a user address.
         let _user = self.user.as_ref().ok_or(VenueError::Unauthorized)?;
-        // Full position parse deferred to signing round (needs funded account to produce a non-empty
-        // state to fixture against). For now: no configured position → None, loud about scope.
-        Ok(None)
+        // Parsing clearinghouseState is deferred to pt2 (needs a funded account to fixture a
+        // non-empty state). Returning `Ok(None)` would lie "flat position" to the risk layer —
+        // fail loud instead (Rule 12), so a bot never trades on a fabricated empty position.
+        Err(VenueError::VenueSpecific(
+            "position: clearinghouseState parse unimplemented — HL signing round (TODO #6 pt2)"
+                .into(),
+        ))
     }
 
     async fn health(&self) -> HealthStatus {
@@ -214,6 +218,16 @@ mod tests {
         assert!(matches!(
             a.position(mref()).await,
             Err(VenueError::Unauthorized)
+        ));
+    }
+
+    #[tokio::test]
+    async fn position_with_user_fails_loud_not_flat() {
+        // With a user set we still can't parse state yet — must error loud, never lie Ok(None).
+        let a = HyperliquidAdapter::builder().user("0xabc").build();
+        assert!(matches!(
+            a.position(mref()).await,
+            Err(VenueError::VenueSpecific(_))
         ));
     }
 }

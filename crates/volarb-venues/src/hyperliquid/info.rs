@@ -52,7 +52,26 @@ pub fn best_bid_ask(book: &L2Book) -> Result<(f64, f64), VenueError> {
     let ask = asks
         .first()
         .ok_or_else(|| VenueError::InsufficientLiquidity(format!("{}: empty asks", book.coin)))?;
-    Ok((parse_px(&bid.px)?, parse_px(&ask.px)?))
+    let (bid, ask) = (parse_px(&bid.px)?, parse_px(&ask.px)?);
+    validate_quote(&book.coin, bid, ask)?;
+    Ok((bid, ask))
+}
+
+/// Enforce the `core::Quote` contract for binary outcome markets: prices in `[0,1]` and a
+/// non-crossed book (`bid <= ask`). A venue returning out-of-range or crossed prices is an
+/// anomaly the Router must not act on — surface loud rather than pass garbage downstream.
+fn validate_quote(coin: &str, bid: f64, ask: f64) -> Result<(), VenueError> {
+    if !(0.0..=1.0).contains(&bid) || !(0.0..=1.0).contains(&ask) {
+        return Err(VenueError::VenueSpecific(format!(
+            "{coin}: price out of [0,1] range (bid={bid}, ask={ask})"
+        )));
+    }
+    if bid > ask {
+        return Err(VenueError::VenueSpecific(format!(
+            "{coin}: crossed book (bid={bid} > ask={ask})"
+        )));
+    }
+    Ok(())
 }
 
 /// Parse a venue price/size string to a finite f64. Rejects NaN/Inf/garbage loud.
@@ -75,9 +94,15 @@ pub struct InfoClient {
 
 impl InfoClient {
     pub fn new(base_url: impl Into<String>) -> Self {
+        // Bounded timeouts: a Router health check must never hang on a half-open socket.
+        let http = reqwest::Client::builder()
+            .connect_timeout(std::time::Duration::from_secs(5))
+            .timeout(std::time::Duration::from_secs(10))
+            .build()
+            .unwrap_or_else(|_| reqwest::Client::new());
         Self {
             base_url: base_url.into(),
-            http: reqwest::Client::new(),
+            http,
         }
     }
 
@@ -149,6 +174,24 @@ mod tests {
         assert!(parse_px("inf").is_err());
         assert!(parse_px("abc").is_err());
         assert_eq!(parse_px("0.24").unwrap(), 0.24);
+    }
+
+    #[test]
+    fn rejects_out_of_range_and_crossed_books() {
+        // price > 1 on a probability market → VenueSpecific anomaly.
+        let oor = r#"{"coin":"ho:X","time":1,"levels":[[{"px":"0.4","sz":"1","n":1}],[{"px":"1.5","sz":"1","n":1}]]}"#;
+        let book: L2Book = serde_json::from_str(oor).unwrap();
+        assert!(matches!(
+            best_bid_ask(&book),
+            Err(VenueError::VenueSpecific(_))
+        ));
+        // crossed book bid > ask → VenueSpecific.
+        let crossed = r#"{"coin":"ho:X","time":1,"levels":[[{"px":"0.6","sz":"1","n":1}],[{"px":"0.4","sz":"1","n":1}]]}"#;
+        let book: L2Book = serde_json::from_str(crossed).unwrap();
+        assert!(matches!(
+            best_bid_ask(&book),
+            Err(VenueError::VenueSpecific(_))
+        ));
     }
 
     #[test]
