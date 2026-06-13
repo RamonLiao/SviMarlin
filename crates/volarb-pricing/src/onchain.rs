@@ -5,10 +5,12 @@
 //! (`tests/onchain_parity.rs`) replays frozen devInspect fixtures bit-exact:
 //! - 216 math cases (ln/exp/sqrt/normal_cdf + i64 scaled ops + DeepBook math::mul/div),
 //!   boundary + abort coverage, against pkg `0xf5ea…5138` (Immutable).
-//! - 23 e2e cases: the full `compute_nd2` composition transcribed op-for-op from `oracle.mv`
-//!   bytecode and run as chained PTBs over a live `OracleSVI` (11 strikes), plus the settled
-//!   strict-`>` tie-break over a real settled oracle. See
-//!   `docs/specs/2026-06-13-l0-parity-basis-findings.md`.
+//! - 11 e2e cases: the full `compute_nd2` composition transcribed op-for-op from `oracle.mv`
+//!   bytecode and run as chained PTBs over a live `OracleSVI` (11 strikes) — TRUE chain parity.
+//! - 12 settled cases (real chain settlement value, incl. `strike == settlement`): the settled
+//!   branch is `s > K ? 1e9 : 0` with NO chain math, so these are a port self-consistency check
+//!   of the strict-`>` tie-break direction on real inputs, NOT a chain-recomputed parity.
+//!   See `docs/specs/2026-06-13-l0-parity-basis-findings.md`.
 //!
 //! Caveat: `oracle::compute_price` is `public(friend)`, so it cannot be devInspect-called
 //! directly; the e2e fixture reconstructs it from public primitives (faithful to bytecode order,

@@ -8,20 +8,37 @@ use volarb_pricing::onchain::{
     I64, OnchainError, OnchainOracle, db_div, db_mul, exp, ln, normal_cdf, sqrt,
 };
 
-/// Chain abort code -> OnchainError alignment (codes documented on each variant in onchain.rs).
-fn abort_matches(code: u64, err: &OnchainError) -> bool {
+/// Exact expected error for a math-function abort. Chain abort codes 0 and 1 are reused by
+/// different functions (0 = ln undefined OR i64 magnitude overflow; 1 = exp overflow OR div by
+/// zero), so we disambiguate by `func` — a code-only match would let e.g. `ln(0)` pass while the
+/// port wrongly returned `MagnitudeOverflow` (codex review 2026-06-13).
+fn expected_math_err(func: &str, code: u64) -> OnchainError {
     use OnchainError::*;
-    matches!(
-        (code, err),
-        (0, MagnitudeOverflow)
-            | (0, LnZero)
-            | (1, DivByZero)
-            | (1, ExpOverflow)
-            | (2, SqrtDomain)
-            | (3, ForwardNonPositive)
-            | (4, BracketNegative)
-            | (5, WNonPositive)
-    )
+    match (func, code) {
+        ("ln", 0) => LnZero,
+        ("exp", 1) => ExpOverflow,
+        ("sqrt", 2) => SqrtDomain,
+        ("mul_scaled" | "square_scaled" | "db_mul", 0) => MagnitudeOverflow,
+        ("div_scaled" | "db_div", 1) => DivByZero,
+        // div also overflows on checked cast-back of (a*1e9/b) -> code 0 (onchain.rs db_div/div_scaled).
+        ("div_scaled" | "db_div", 0) => MagnitudeOverflow,
+        _ => panic!("unmapped math abort: func={func} code={code}"),
+    }
+}
+
+/// Exact expected error for a `compute_price`/`compute_nd2` abort. Each code maps 1:1 in this path:
+/// 3 = forward not positive, 4 = bracket negative, 5 = w not positive, 0 = ln(F/K) undefined,
+/// 2 = sqrt domain. (Code 0 here is only reachable via `ln`, never the i64 magnitude path.)
+fn expected_e2e_err(code: u64) -> OnchainError {
+    use OnchainError::*;
+    match code {
+        0 => LnZero,
+        2 => SqrtDomain,
+        3 => ForwardNonPositive,
+        4 => BracketNegative,
+        5 => WNonPositive,
+        _ => panic!("unmapped e2e abort code {code}"),
+    }
 }
 
 fn run_math(c: &MathCase) {
@@ -73,11 +90,13 @@ fn run_math(c: &MathCase) {
             );
         }
         (None, Some(code), Err(e)) => {
-            assert!(
-                abort_matches(code, &e),
-                "{} args={:?}: chain abort {code} but port err {e:?}",
+            assert_eq!(
+                e,
+                expected_math_err(&c.func, code),
+                "{} args={:?}: chain abort {code} expects {:?} but port err {e:?}",
                 c.func,
-                c.args
+                c.args,
+                expected_math_err(&c.func, code)
             );
         }
         (ret, ab, got) => panic!(
@@ -103,11 +122,13 @@ fn run_e2e(c: &E2eCase) {
             "oracle {} strike {}: port={got} ({got:#x}) chain={want} ({want:#x})",
             c.oracle_id, c.strike
         ),
-        (None, Some(code), Err(e)) => assert!(
-            abort_matches(code, &e),
-            "oracle {} strike {}: chain abort {code}, port err {e:?}",
+        (None, Some(code), Err(e)) => assert_eq!(
+            e,
+            expected_e2e_err(code),
+            "oracle {} strike {}: chain abort {code} expects {:?}, port err {e:?}",
             c.oracle_id,
-            c.strike
+            c.strike,
+            expected_e2e_err(code)
         ),
         (r, a, g) => panic!(
             "oracle {} strike {}: fixture(ret={r:?},abort={a:?}) vs port {g:?}",

@@ -7,7 +7,7 @@
 
 ## TL;DR
 
-- **L0 Rust port is bit-exact vs testnet chain** across 216 math cases + 23 e2e cases (zero tolerance, `assert_eq!` on u64). "L0 == chain" is now **proven**, not assumed.
+- **L0 Rust port is bit-exact vs testnet chain** across 216 math cases + 11 e2e `compute_nd2` cases (zero tolerance, `assert_eq!` on u64). "L0 == chain" is now **proven**, not assumed. (+12 settled cases are a port self-consistency check, not chain parity — see below.)
 - **L0-vs-L1 basis is negligible**: max **230.7 ticks** (2.31e-7 of price), mean 39.5, p50 0, p99 230.7 over 11 priced strikes. The chain's fixed-point integer path is effectively clean float at probability scale → **fixed-point truncation is NOT a meaningful edge sink**. The router's edge buffer should be driven by spread / day-count / surface-fit basis (L1 + `pricing_config`), not the L0 integer path.
 
 ## What was verified
@@ -21,8 +21,8 @@ Deterministic sweep (LCG seed=42) of every primitive `compute_nd2` depends on, v
 ### E2E layer (23 cases, `e2e_oracles.json`)
 `oracle::compute_price`/`compute_nd2` are `public(friend)` → **not** devInspect-callable, and no public wrapper returns the raw price (`get_trade_amounts` applies spread+qty). So `compute_nd2` was **mechanically transcribed op-for-op from `oracle.mv` bytecode** (re-disassembled this task) into chained PTBs: every Move primitive runs on the real chain in bytecode order; the 3 native ops (`inner=sq+sig2`, `w=a+b·mag`, `half_w=w/2`) + abort branches run in Rust. The transcription is derived from bytecode independently of `onchain.rs`, so a match is a genuine cross-check of composition order (the lessons-2026-06-03 risk), not me-vs-me.
 
-- **1 live non-settled oracle** (`0x10bf…b696`, BTC sub-hour) × 11 strikes (0.5×–2.0× forward, deep ITM/OTM + ATM) → full `compute_nd2` path bit-exact.
-- **1 settled oracle** (`0x1370…520d`, settled mid-capture) × 12 strikes incl. `strike == settlement` → settled strict-`>` tie-break bit-exact (ATM-at-settlement resolves **DOWN** → 0).
+- **1 live non-settled oracle** (`0x10bf…b696`, BTC sub-hour) × 11 strikes (0.5×–2.0× forward, deep ITM/OTM + ATM) → full `compute_nd2` path **bit-exact (true chain parity)**.
+- **1 settled oracle** (`0x1370…520d`, settled mid-capture) × 12 strikes incl. `strike == settlement`. ⚠️ The settled branch is `s > K ? 1e9 : 0` with **no chain math**, so both the fixture ground-truth and the port compute the same trivial comparison in Rust — this is a **port self-consistency check** of the strict-`>` tie-break direction (ATM-at-settlement → **DOWN** → 0) on a real chain settlement value, **NOT chain-recomputed parity**. The settled composition is not devInspect-reachable (`compute_price` is `public(friend)` and short-circuits before any callable primitive).
 
 ### F-findings (from sui-architect review) resolved
 - **F1 (oracle enumeration)**: shared `OracleSVI` discovered via `oracle::OracleSVIUpdated` events (`suix_queryEvents`), snapshotted via `getObject`. Object ids frozen in the capture bin.
