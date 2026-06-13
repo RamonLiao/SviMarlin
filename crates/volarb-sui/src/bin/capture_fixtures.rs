@@ -19,10 +19,24 @@ use sui_sdk_types::{
 use volarb_sui::capture_points::{Case, math_sweep};
 
 const PKG: &str = "0xf5ea2b3749c65d6e56507cc35388719aadb28f9cab873696a2f8687f5c785138";
+/// DeepBook math package — `compute_nd2` calls `math::mul/div` (round-down) from HERE, not the
+/// package's own `math`. db_mul/db_div fixtures target this so the port is validated against the
+/// REAL DeepBook math, not a proxy (oracle.mv `use fb28…6982::math`).
+const DEEPBOOK_PKG: &str = "0xfb28c4cbc6865bd1c897d26aecbe1f8792d1509a20ffec692c800660cbec6982";
 const RPC: &str = "https://fullnode.testnet.sui.io:443";
 const SENDER: &str = "0x0000000000000000000000000000000000000000000000000000000000000000";
 const SEED: u64 = 42;
 const BATCH: usize = 40;
+const SCALE: u64 = 1_000_000_000;
+
+/// Live BTC sub-hour oracles discovered via `oracle::OracleSVIUpdated` events (Task 5, F1).
+/// Frozen ids: the package is Immutable, but oracle objects are mutable shared state — the
+/// e2e fixture snapshots their full field set at capture time, so the fixture stays valid
+/// even after these oracles settle/expire.
+const ORACLE_IDS: &[&str] = &[
+    "0x137099db3d7ba7edcc2df967648f1698f6362e652209313ff546214df236520d",
+    "0x10bf167846258fe50b811cd8f88a5ff3423ceaf7aca38444d92c0912f52bb696",
+];
 
 // ---------- fixture output schema (Serialize side; the JSON format IS the contract with
 // volarb-pricing/tests/fixture_schema.rs) ----------
@@ -54,7 +68,6 @@ struct MathCaseOut {
 }
 
 #[derive(Serialize)]
-#[allow(dead_code)] // populated in the e2e capture (Task 5)
 struct E2eCaseOut {
     oracle_id: String,
     forward: u64,
@@ -100,14 +113,23 @@ fn tx_kind_b64(inputs: Vec<Input>, commands: Vec<Command>) -> Result<String> {
     Ok(base64::engine::general_purpose::STANDARD.encode(bcs::to_bytes(&kind)?))
 }
 
-fn move_call(module: &str, function: &str, arguments: Vec<Argument>) -> Result<Command> {
+fn move_call_at(
+    pkg: &str,
+    module: &str,
+    function: &str,
+    arguments: Vec<Argument>,
+) -> Result<Command> {
     Ok(Command::MoveCall(MoveCall {
-        package: Address::from_str(PKG)?,
+        package: Address::from_str(pkg)?,
         module: Identifier::new(module)?,
         function: Identifier::new(function)?,
         type_arguments: vec![],
         arguments,
     }))
+}
+
+fn move_call(module: &str, function: &str, arguments: Vec<Argument>) -> Result<Command> {
+    move_call_at(PKG, module, function, arguments)
 }
 
 fn return_bytes(result: &serde_json::Value, cmd: usize) -> Result<Vec<u8>> {
@@ -196,27 +218,16 @@ fn push_case(
             let a = i64_arg(0, inputs, commands)?;
             ("i64", "square_scaled", vec![a], RetKind::U64)
         }
-        // db_mul/db_div mirror DeepBook math::mul/div; on chain we reach the identical code
-        // through i64::mul_scaled/div_scaled with positive operands (port note in capture_points).
+        // db_mul/db_div call the REAL DeepBook math::mul/div (round-down) — the exact functions
+        // compute_nd2 invokes. (u64, u64) -> u64, no i64 wrapping.
         "db_mul" | "db_div" => {
-            let f = if case.func == "db_mul" {
-                "mul_scaled"
-            } else {
-                "div_scaled"
-            };
+            let f = if case.func == "db_mul" { "mul" } else { "div" };
             inputs.push(Input::Pure(bcs::to_bytes(&case.args[0])?));
-            let a_mag = Argument::Input((inputs.len() - 1) as u16);
-            inputs.push(Input::Pure(bcs::to_bytes(&false)?));
-            let a_neg = Argument::Input((inputs.len() - 1) as u16);
-            commands.push(move_call("i64", "from_parts", vec![a_mag, a_neg])?);
-            let a = Argument::Result((commands.len() - 1) as u16);
+            let a0 = Argument::Input((inputs.len() - 1) as u16);
             inputs.push(Input::Pure(bcs::to_bytes(&case.args[1])?));
-            let b_mag = Argument::Input((inputs.len() - 1) as u16);
-            inputs.push(Input::Pure(bcs::to_bytes(&false)?));
-            let b_neg = Argument::Input((inputs.len() - 1) as u16);
-            commands.push(move_call("i64", "from_parts", vec![b_mag, b_neg])?);
-            let b = Argument::Result((commands.len() - 1) as u16);
-            ("i64", f, vec![a, b], RetKind::I64)
+            let a1 = Argument::Input((inputs.len() - 1) as u16);
+            commands.push(move_call_at(DEEPBOOK_PKG, "math", f, vec![a0, a1])?);
+            return Ok((commands.len() - 1, RetKind::U64));
         }
         other => bail!("unknown case func {other}"),
     };
@@ -225,18 +236,12 @@ fn push_case(
 }
 
 /// Decode a target-command return value into the fixture `ret` JSON.
-/// db_* cases: chain returned a (positive) I64 — record its magnitude as u64.
-fn decode_ret(case: &Case, kind: &RetKind, bytes: &[u8]) -> Result<serde_json::Value> {
+fn decode_ret(_case: &Case, kind: &RetKind, bytes: &[u8]) -> Result<serde_json::Value> {
     Ok(match kind {
         RetKind::U64 => serde_json::json!(bcs::from_bytes::<u64>(bytes)?),
         RetKind::I64 => {
             let (mag, neg): (u64, bool) = bcs::from_bytes(bytes)?;
-            if case.func.starts_with("db_") {
-                anyhow::ensure!(!neg, "db_* fixture came back negative");
-                serde_json::json!(mag)
-            } else {
-                serde_json::json!({"magnitude": mag, "is_negative": neg})
-            }
+            serde_json::json!({"magnitude": mag, "is_negative": neg})
         }
     })
 }
@@ -321,6 +326,277 @@ fn capture_meta(channel: &str) -> Result<Meta> {
     })
 }
 
+// ---------- e2e: compute_nd2 reconstruction (Task 5, F1) ----------
+//
+// `oracle::compute_price`/`compute_nd2` are `public(friend)` — NOT callable via devInspect, and
+// no public wrapper returns the raw price (get_trade_amounts applies spread+qty). So we MECHANICALLY
+// TRANSCRIBE compute_nd2's bytecode (oracle.mv, re-disassembled Task 5) into chained PTBs: every
+// Move primitive runs on the REAL chain in bytecode order; the 3 native ops (inner=sq+sig2,
+// w=a+b·mag, half_w=w/2) + the abort branches (forward>0 / bracket≥0 / w>0) run in Rust. The
+// transcription is independent of the Rust port (derived from bytecode, not onchain.rs), so a
+// matching result is a genuine cross-check of the composition order, not me-vs-me.
+//
+// F3: `binary_price_pair`'s `&Clock` is UNUSED in its body (verified op-by-op) — zero gating, so
+// compute_price needs no Clock and the fixture is timeless.
+
+struct Oracle {
+    id: String,
+    forward: u64,
+    a: u64,
+    b: u64,
+    sigma: u64,
+    rho_mag: u64,
+    rho_neg: bool,
+    m_mag: u64,
+    m_neg: bool,
+    settlement: Option<u64>,
+    expiry_ms: u64,
+}
+
+fn as_u64(v: &serde_json::Value) -> Result<u64> {
+    Ok(v.as_str().context("expected stringified u64")?.parse()?)
+}
+
+fn fetch_oracle(id: &str) -> Result<Oracle> {
+    let r = rpc_call(
+        "sui_getObject",
+        serde_json::json!([id, {"showContent": true}]),
+    )?;
+    let f = &r["data"]["content"]["fields"];
+    let svi = &f["svi"]["fields"];
+    let i64f = |field: &serde_json::Value| -> Result<(u64, bool)> {
+        let ff = &field["fields"];
+        Ok((
+            as_u64(&ff["magnitude"])?,
+            ff["is_negative"].as_bool().context("is_negative")?,
+        ))
+    };
+    let (rho_mag, rho_neg) = i64f(&svi["rho"])?;
+    let (m_mag, m_neg) = i64f(&svi["m"])?;
+    let settlement = match &f["settlement_price"] {
+        serde_json::Value::Null => None,
+        v => Some(as_u64(v)?),
+    };
+    Ok(Oracle {
+        id: id.to_string(),
+        forward: as_u64(&f["prices"]["fields"]["forward"])?,
+        a: as_u64(&svi["a"])?,
+        b: as_u64(&svi["b"])?,
+        sigma: as_u64(&svi["sigma"])?,
+        rho_mag,
+        rho_neg,
+        m_mag,
+        m_neg,
+        settlement,
+        expiry_ms: as_u64(&f["expiry"])?,
+    })
+}
+
+fn pure_u64(inputs: &mut Vec<Input>, x: u64) -> Result<Argument> {
+    inputs.push(Input::Pure(bcs::to_bytes(&x)?));
+    Ok(Argument::Input((inputs.len() - 1) as u16))
+}
+
+/// i64::from_parts(mag, neg) where mag is any Argument (pure or a prior Result). Returns the I64
+/// command's Result argument.
+fn i64_from(
+    inputs: &mut Vec<Input>,
+    commands: &mut Vec<Command>,
+    mag: Argument,
+    neg: bool,
+) -> Result<Argument> {
+    inputs.push(Input::Pure(bcs::to_bytes(&neg)?));
+    let nf = Argument::Input((inputs.len() - 1) as u16);
+    commands.push(move_call("i64", "from_parts", vec![mag, nf])?);
+    Ok(Argument::Result((commands.len() - 1) as u16))
+}
+
+fn last(commands: &[Command]) -> Argument {
+    Argument::Result((commands.len() - 1) as u16)
+}
+
+fn read_u64(result: &serde_json::Value, cmd: usize) -> Result<u64> {
+    Ok(bcs::from_bytes(&return_bytes(result, cmd)?)?)
+}
+
+fn read_i64(result: &serde_json::Value, cmd: usize) -> Result<(u64, bool)> {
+    Ok(bcs::from_bytes(&return_bytes(result, cmd)?)?)
+}
+
+/// Run the transcribed compute_nd2. Returns (Some(price), None) or (None, Some(abort_code)).
+/// On any primitive abort the chain reports the code; for the in-Rust branches we emit the same
+/// codes compute_nd2 would (4 = bracket negative, 5 = w not positive).
+fn chain_compute_price(o: &Oracle, strike: u64) -> Result<(Option<u64>, Option<u64>)> {
+    // Settled path [compute_price B0-B4]: s > K ? 1e9 : 0 (strict; ties resolve DOWN). This branch
+    // has NO chain math, so the ground-truth is the comparison itself — same op the port runs.
+    if let Some(s) = o.settlement {
+        return Ok((Some(if s > strike { SCALE } else { 0 }), None));
+    }
+    if o.forward == 0 {
+        return Ok((None, Some(3)));
+    }
+    // ---- Segment 1: k, diff, sq, sig2, rho_term ----
+    let (mut inp, mut cmd) = (Vec::new(), Vec::new());
+    let k_arg = pure_u64(&mut inp, strike)?;
+    let f_arg = pure_u64(&mut inp, o.forward)?;
+    cmd.push(move_call_at(
+        DEEPBOOK_PKG,
+        "math",
+        "div",
+        vec![k_arg, f_arg],
+    )?); // [18]
+    let kdiv = last(&cmd);
+    cmd.push(move_call("math", "ln", vec![kdiv])?); // [19] k (I64)  c1
+    let c_k = cmd.len() - 1;
+    let m_mag_arg = pure_u64(&mut inp, o.m_mag)?;
+    let m_i = i64_from(&mut inp, &mut cmd, m_mag_arg, o.m_neg)?;
+    let k_res = Argument::Result(c_k as u16);
+    cmd.push(move_call("i64", "sub", vec![k_res, m_i])?); // [24] diff
+    let c_diff = cmd.len() - 1;
+    let diff = Argument::Result(c_diff as u16);
+    cmd.push(move_call("i64", "square_scaled", vec![diff])?); // [27] sq
+    let c_sq = cmd.len() - 1;
+    let sig_a = pure_u64(&mut inp, o.sigma)?;
+    let sig_b = pure_u64(&mut inp, o.sigma)?;
+    cmd.push(move_call_at(
+        DEEPBOOK_PKG,
+        "math",
+        "mul",
+        vec![sig_a, sig_b],
+    )?); // [35] sig2
+    let c_sig2 = cmd.len() - 1;
+    let rho_mag_arg = pure_u64(&mut inp, o.rho_mag)?;
+    let rho_i = i64_from(&mut inp, &mut cmd, rho_mag_arg, o.rho_neg)?;
+    cmd.push(move_call("i64", "mul_scaled", vec![rho_i, diff])?); // [47] rho_term
+    let c_rt = cmd.len() - 1;
+    let r1 = dev_inspect(&tx_kind_b64(inp, cmd)?)?;
+    if !is_success(&r1) {
+        return Ok((None, Some(abort_code(&r1)?)));
+    }
+    let (k_mag, k_neg) = read_i64(&r1, c_k)?;
+    let sq = read_u64(&r1, c_sq)?;
+    let sig2 = read_u64(&r1, c_sig2)?;
+    let (rt_mag, rt_neg) = read_i64(&r1, c_rt)?;
+    let inner = sq.checked_add(sig2).context("inner overflow")?; // native [37-39]
+
+    // ---- Segment 2: sqrt_t, bracket, mag, b·mag ----
+    let (mut inp, mut cmd) = (Vec::new(), Vec::new());
+    let inner_a = pure_u64(&mut inp, inner)?;
+    let e9_a = pure_u64(&mut inp, SCALE)?;
+    cmd.push(move_call("math", "sqrt", vec![inner_a, e9_a])?); // [41]
+    let sqrti = last(&cmd);
+    let sqrt_t = i64_from(&mut inp, &mut cmd, sqrti, false)?; // [42] from_u64≡from_parts(.,false)
+    let rt_mag_arg = pure_u64(&mut inp, rt_mag)?;
+    let rt_i = i64_from(&mut inp, &mut cmd, rt_mag_arg, rt_neg)?;
+    cmd.push(move_call("i64", "add", vec![rt_i, sqrt_t])?); // [51] bracket
+    let c_bracket = cmd.len() - 1;
+    let bracket = Argument::Result(c_bracket as u16);
+    cmd.push(move_call("i64", "magnitude", vec![bracket])?); // [67] mag
+    let mag_res = last(&cmd);
+    let b_arg = pure_u64(&mut inp, o.b)?;
+    cmd.push(move_call_at(
+        DEEPBOOK_PKG,
+        "math",
+        "mul",
+        vec![b_arg, mag_res],
+    )?); // [68] b·mag
+    let c_bmag = cmd.len() - 1;
+    let r2 = dev_inspect(&tx_kind_b64(inp, cmd)?)?;
+    if !is_success(&r2) {
+        return Ok((None, Some(abort_code(&r2)?)));
+    }
+    let (_, bracket_neg) = read_i64(&r2, c_bracket)?;
+    if bracket_neg {
+        return Ok((None, Some(4))); // [54-59]
+    }
+    let bmag = read_u64(&r2, c_bmag)?;
+    let w = o.a.checked_add(bmag).context("w overflow")?; // native [69]
+    if w == 0 {
+        return Ok((None, Some(5))); // [71-77]
+    }
+    let half_w = w / 2; // native [83-85]
+
+    // ---- Segment 3: sqrt_w, numer, d, d2, normal_cdf ----
+    let (mut inp, mut cmd) = (Vec::new(), Vec::new());
+    let w_a = pure_u64(&mut inp, w)?;
+    let e9_b = pure_u64(&mut inp, SCALE)?;
+    cmd.push(move_call("math", "sqrt", vec![w_a, e9_b])?); // [80]
+    let sqrtw_u = last(&cmd);
+    let sqrt_w = i64_from(&mut inp, &mut cmd, sqrtw_u, false)?; // [81]
+    let halfw_mag_arg = pure_u64(&mut inp, half_w)?;
+    let halfw_i = i64_from(&mut inp, &mut cmd, halfw_mag_arg, false)?; // [86]
+    let k_mag_arg = pure_u64(&mut inp, k_mag)?;
+    let k_i = i64_from(&mut inp, &mut cmd, k_mag_arg, k_neg)?;
+    cmd.push(move_call("i64", "add", vec![k_i, halfw_i])?); // [90] numer = k + half_w
+    let numer = last(&cmd);
+    cmd.push(move_call("i64", "div_scaled", vec![numer, sqrt_w])?); // [94] d
+    let d = last(&cmd);
+    cmd.push(move_call("i64", "neg", vec![d])?); // [97] d2
+    let d2 = last(&cmd);
+    cmd.push(move_call("math", "normal_cdf", vec![d2])?); // [100]
+    let c_res = cmd.len() - 1;
+    let r3 = dev_inspect(&tx_kind_b64(inp, cmd)?)?;
+    if !is_success(&r3) {
+        return Ok((None, Some(abort_code(&r3)?)));
+    }
+    Ok((Some(read_u64(&r3, c_res)?), None))
+}
+
+/// strike = forward · ratio (num/den), covering deep ITM/OTM + ATM.
+const STRIKE_RATIOS: &[(u64, u64)] = &[
+    (1, 2),
+    (4, 5),
+    (9, 10),
+    (19, 20),
+    (99, 100),
+    (1, 1),
+    (101, 100),
+    (21, 20),
+    (11, 10),
+    (5, 4),
+    (2, 1),
+];
+
+fn capture_e2e() -> Result<Vec<E2eCaseOut>> {
+    let mut out = Vec::new();
+    for id in ORACLE_IDS {
+        let o = fetch_oracle(id)?;
+        eprintln!(
+            "oracle {id}: forward={} settled={:?}",
+            o.forward, o.settlement
+        );
+        // strike grid; for a settled oracle add strike == settlement to exercise the strict-`>`
+        // tie-break (ATM-at-settlement resolves DOWN -> 0).
+        let mut strikes: Vec<u64> = STRIKE_RATIOS
+            .iter()
+            .map(|(num, den)| ((o.forward as u128) * (*num as u128) / (*den as u128)) as u64)
+            .collect();
+        if let Some(s) = o.settlement {
+            strikes.push(s);
+        }
+        for strike in strikes {
+            let (ret, expect_abort) = chain_compute_price(&o, strike)?;
+            out.push(E2eCaseOut {
+                oracle_id: o.id.clone(),
+                forward: o.forward,
+                a: o.a,
+                b: o.b,
+                sigma: o.sigma,
+                rho_mag: o.rho_mag,
+                rho_neg: o.rho_neg,
+                m_mag: o.m_mag,
+                m_neg: o.m_neg,
+                settlement: o.settlement,
+                expiry_ms: o.expiry_ms,
+                strike,
+                ret,
+                expect_abort,
+            });
+        }
+    }
+    Ok(out)
+}
+
 fn main() -> Result<()> {
     // Preflight: channel sanity (Task 3 spike anchor).
     let b64 = tx_kind_b64(
@@ -345,16 +621,32 @@ fn main() -> Result<()> {
     let aborts = math.iter().filter(|c| c.expect_abort.is_some()).count();
     eprintln!("captured {} math cases ({aborts} aborts)", math.len());
 
-    let file = FixtureFile {
-        meta,
+    let sweep = FixtureFile {
+        meta: capture_meta("json-rpc")?,
         math,
-        e2e: vec![], // e2e capture lands in Task 5 (separate file)
+        e2e: vec![],
     };
-    let path = concat!(
+    let sweep_path = concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/../volarb-pricing/tests/fixtures/math_sweep.json"
     );
-    std::fs::write(path, serde_json::to_string_pretty(&file)?)?;
-    eprintln!("wrote {path}");
+    std::fs::write(sweep_path, serde_json::to_string_pretty(&sweep)?)?;
+    eprintln!("wrote {sweep_path}");
+
+    // e2e: transcribed compute_nd2 over live oracles (Task 5).
+    let e2e = capture_e2e()?;
+    let e2e_aborts = e2e.iter().filter(|c| c.expect_abort.is_some()).count();
+    eprintln!("captured {} e2e cases ({e2e_aborts} aborts)", e2e.len());
+    let e2e_file = FixtureFile {
+        meta,
+        math: vec![],
+        e2e,
+    };
+    let e2e_path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../volarb-pricing/tests/fixtures/e2e_oracles.json"
+    );
+    std::fs::write(e2e_path, serde_json::to_string_pretty(&e2e_file)?)?;
+    eprintln!("wrote {e2e_path}");
     Ok(())
 }

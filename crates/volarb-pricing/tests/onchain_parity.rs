@@ -158,7 +158,6 @@ fn selftest_harness_mechanics() {
 
 /// True parity: chain-captured frozen fixtures. Missing fixtures = FAIL LOUD (spec §4).
 #[test]
-#[ignore = "fixtures land in Task 6 — same branch; ignore MUST be removed before merge"]
 fn chain_parity_bit_exact() {
     let paths = fixture_paths(false);
     assert!(
