@@ -7,3 +7,8 @@ tasks/lessons.md
 # Rust
 /target
 **/target
+
+# Secrets — NEVER commit (private keys, env). Only .env.example is tracked.
+.env
+.env.*
+!.env.example
