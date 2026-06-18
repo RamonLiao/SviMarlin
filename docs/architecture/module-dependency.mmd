@@ -1,0 +1,75 @@
+graph TD
+  subgraph Frontend["Layer 3 — User Surface"]
+    Dashboard["Next.js Dashboard"]
+    Telegram["Telegram Alerts (v1)"]
+  end
+
+  subgraph Engine["Layer 2 — Off-Chain Engine (Rust)"]
+    Core["volarb-core (types)"]
+    Pricing["volarb-pricing<br/>SVI fit + BS binary"]
+    Venues["volarb-venues<br/>VenueAdapter trait"]
+    Router["volarb-router<br/>spread routing"]
+    Risk["volarb-risk<br/>Kelly + watchdogs"]
+    Executor["volarb-executor<br/>2-leg state machine"]
+    SuiSdk["volarb-sui<br/>PTB builder"]
+    Indexer["volarb-indexer<br/>Postgres writer"]
+    Rpc["volarb-rpc<br/>gRPC for dashboard"]
+    Bin["volarb-bin<br/>main + supervisor"]
+  end
+
+  subgraph Chains["Layer 1 — Chains"]
+    SuiChain["Sui Testnet<br/>predict::*, oracle::*, Pyth"]
+    HLChain["Hyperliquid HIP-4<br/>Chain 998"]
+    BaseChain["Base Sepolia<br/>Limitless"]
+  end
+
+  subgraph Vault["v2 Move Package (post-MVP)"]
+    VaultMod["vol_arb_vault"]
+    Verifier["nautilus_verifier"]
+    Admin["vault_admin"]
+    Events["vault_events"]
+    Enclave["nav_oracle<br/>(Rust in Nitro Enclave)"]
+  end
+
+  Dashboard --> Rpc
+  Telegram --> Bin
+  Rpc --> Pricing
+  Rpc --> Risk
+  Rpc --> Indexer
+
+  Bin --> Pricing
+  Bin --> Router
+  Bin --> Risk
+  Bin --> Executor
+
+  Pricing --> Core
+  Venues --> Core
+  Router --> Pricing
+  Router --> Venues
+  Router --> Risk
+  Executor --> Router
+  Executor --> SuiSdk
+  Executor --> Venues
+  Executor --> Indexer
+
+  Pricing --> SuiChain
+  SuiSdk --> SuiChain
+  Venues --> HLChain
+  Venues --> BaseChain
+
+  Enclave -.reads.-> SuiChain
+  Enclave -.reads.-> HLChain
+  Enclave -.reads.-> BaseChain
+  Enclave --> Verifier
+  Verifier --> VaultMod
+  Admin --> VaultMod
+  VaultMod --> Events
+
+  Dashboard -.reads.-> VaultMod
+
+  classDef mvp fill:#1f6feb,stroke:#0969da,color:#fff
+  classDef v1 fill:#bf8700,stroke:#9a6700,color:#fff
+  classDef v2 fill:#8250df,stroke:#6639ba,color:#fff
+  class Pricing,Venues,Router,Risk,Executor,SuiSdk,Indexer,Rpc,Bin,Core,Dashboard,SuiChain,HLChain,BaseChain mvp
+  class Telegram v1
+  class VaultMod,Verifier,Admin,Events,Enclave v2

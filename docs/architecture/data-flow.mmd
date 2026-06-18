@@ -1,0 +1,35 @@
+sequenceDiagram
+  autonumber
+  participant Sui as Sui Predict (OracleSVI)
+  participant HL as Hyperliquid HIP-4
+  participant LM as Limitless
+  participant Eng as Off-Chain Engine
+  participant Idx as Postgres Indexer
+  participant UI as Dashboard
+
+  Sui-->>Eng: OracleSVIUpdated (WS)
+  HL-->>Eng: quote stream (WS)
+  LM-->>Eng: quote stream (WS)
+
+  Eng->>Eng: Pricing: fit SVI, BS-invert venues
+  Eng->>Eng: Router: pick venue argmax(|Δσ| − fees)
+  Eng->>Eng: Risk: gates check
+
+  alt all gates pass
+    Eng->>Idx: write cycle (state=Preparing)
+    par fire both legs
+      Eng->>Sui: predict::mint PTB
+      Sui-->>Eng: tx digest
+    and
+      Eng->>HL: place binary order
+      HL-->>Eng: order receipt
+    end
+    Eng->>Idx: write cycle (state=Live)
+    UI-->>Idx: poll, render live tape
+    Note over Eng: hold to expiry
+    Eng->>Sui: predict::redeem
+    Eng->>HL: settle
+    Eng->>Idx: write cycle (state=Settled, realized_pnl)
+  else any gate fails
+    Eng->>Idx: write risk_event, skip cycle
+  end
