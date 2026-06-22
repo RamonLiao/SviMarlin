@@ -25,7 +25,7 @@ impl ExchangeClient {
             .connect_timeout(std::time::Duration::from_secs(TIMEOUT_SECS))
             .timeout(std::time::Duration::from_secs(TIMEOUT_SECS))
             .build()
-            .expect("reqwest client");
+            .unwrap_or_else(|_| reqwest::Client::new());
         Self { http, base_url }
     }
 

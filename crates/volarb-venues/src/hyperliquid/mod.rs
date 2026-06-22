@@ -235,6 +235,9 @@ impl VenueAdapter for HyperliquidAdapter {
 
     fn chain(&self) -> ChainKind {
         // HL testnet = chain_id 998; mainnet = 1337 (HL's EVM chain id).
+        // This is the EVM RPC chain id, SEPARATE from the EIP-712 signing domain chainId,
+        // which is intentionally 1337 for BOTH testnet and mainnet (they differ only in the
+        // phantom-agent `source` field: "b" for testnet, "a" for mainnet).
         ChainKind::Evm {
             chain_id: if self.testnet { 998 } else { 1337 },
         }

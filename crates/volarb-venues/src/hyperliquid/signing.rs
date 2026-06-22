@@ -58,7 +58,6 @@ sol! {
 }
 
 #[derive(Serialize)]
-#[allow(dead_code)]
 pub(crate) struct Signature {
     pub r: String,
     pub s: String,
@@ -66,7 +65,6 @@ pub(crate) struct Signature {
 }
 
 /// SDK `sign_l1_action`: action_hash → phantom agent → EIP-712 (Exchange/1/1337) → {r,s,v}.
-#[allow(dead_code)]
 pub(crate) fn sign_l1_action<T: Serialize>(
     signer: &PrivateKeySigner,
     action: &T,
@@ -114,26 +112,22 @@ pub(crate) struct OrderWire<'a> {
     pub t: OrderTypeWire<'a>,
 }
 #[derive(Serialize)]
-#[allow(dead_code)]
 pub(crate) struct OrderAction<'a> {
     pub r#type: &'a str,
     pub orders: Vec<OrderWire<'a>>,
     pub grouping: &'a str,
 }
 #[derive(Serialize)]
-#[allow(dead_code)]
 pub(crate) struct CancelWire {
     pub a: u32,
     pub o: u64,
 }
 #[derive(Serialize)]
-#[allow(dead_code)]
 pub(crate) struct CancelAction<'a> {
     pub r#type: &'a str,
     pub cancels: Vec<CancelWire>,
 }
 
-#[allow(dead_code)]
 pub(crate) fn order_wire(
     asset: u32,
     is_buy: bool,
@@ -155,7 +149,6 @@ pub(crate) fn order_wire(
 }
 
 /// SDK `action_hash`: msgpack(action) ++ nonce(8 BE) ++ vault byte ++ (no expires).
-#[allow(dead_code)]
 pub(crate) fn action_hash<T: Serialize>(
     action: &T,
     nonce: u64,

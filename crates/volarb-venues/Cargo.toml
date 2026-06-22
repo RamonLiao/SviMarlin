@@ -19,7 +19,7 @@ alloy-primitives = "1.6.0"
 alloy-sol-types = "1.6.0"
 alloy-signer = "2.1.0"
 alloy-signer-local = "2.1.0"
-hex = "0.4.3"
 
 [dev-dependencies]
 tokio = { workspace = true }
+hex = "0.4.3"
