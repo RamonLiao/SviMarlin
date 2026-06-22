@@ -1,6 +1,7 @@
 //! Hyperliquid HIP-4 venue adapter.
 
 pub mod info;
+pub mod signing;
 pub mod ws;
 
 use crate::{
