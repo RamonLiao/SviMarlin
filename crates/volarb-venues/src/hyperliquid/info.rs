@@ -142,6 +142,54 @@ impl InfoClient {
             .await?;
         Ok(raw.1)
     }
+
+    /// Resolve the HL builder-dex asset index for `(dex, coin)`.
+    ///
+    /// Fetches `perpDexs` to find the perp-dex ordinal for `dex`, then per-dex `meta` to find
+    /// the coin's index in `universe[]`, and combines them via [`builder_asset_index`].
+    ///
+    /// NOTE: the offset formula in [`builder_asset_index`] is the SUSPECTED HL convention and is
+    /// unverified until the Task 9 live probe confirms it against the real `perpDexs` ordering.
+    pub(crate) async fn asset_index(&self, dex: &str, coin: &str) -> Result<u32, VenueError> {
+        // `perpDexs` → array; entry 0 is the base perp dex (null), builder dexes follow with a
+        // `{"name": ...}` object. Find the ordinal whose name matches `dex`.
+        let perp_dexs: serde_json::Value =
+            self.post(serde_json::json!({ "type": "perpDexs" })).await?;
+        let arr = perp_dexs
+            .as_array()
+            .ok_or_else(|| VenueError::VenueSpecific("perpDexs: not an array".into()))?;
+        let perp_dex_index = arr
+            .iter()
+            .position(|d| d.get("name").and_then(|n| n.as_str()) == Some(dex))
+            .ok_or_else(|| VenueError::VenueSpecific(format!("unknown perp dex: {dex}")))?
+            as u32;
+
+        // Per-dex `meta` → `universe[]`; find the coin's index. `coin` here is the bare coin
+        // name (the part after the last ':' in a venue_market).
+        let meta: serde_json::Value = self
+            .post(serde_json::json!({ "type": "meta", "dex": dex }))
+            .await?;
+        let universe = meta
+            .get("universe")
+            .and_then(|u| u.as_array())
+            .ok_or_else(|| VenueError::VenueSpecific("meta: missing universe array".into()))?;
+        let coin_index = universe
+            .iter()
+            .position(|a| a.get("name").and_then(|n| n.as_str()) == Some(coin))
+            .ok_or_else(|| {
+                VenueError::VenueSpecific(format!("unknown coin: {coin} in dex {dex}"))
+            })? as u32;
+
+        Ok(builder_asset_index(perp_dex_index, coin_index))
+    }
+}
+
+/// Builder-dex asset index per HL convention.
+///
+/// SUSPECTED formula: `100000 + perp_dex_index*10000 + coin_index_in_dex`. Verify against the
+/// live `perpDexs` ordering (Task 9 probe) before trusting it on the money path.
+pub(crate) fn builder_asset_index(perp_dex_index: u32, coin_index_in_dex: u32) -> u32 {
+    100_000 + perp_dex_index * 10_000 + coin_index_in_dex
 }
 
 #[cfg(test)]
@@ -192,6 +240,13 @@ mod tests {
             best_bid_ask(&book),
             Err(VenueError::VenueSpecific(_))
         ));
+    }
+
+    #[test]
+    fn builder_asset_index_applies_offset() {
+        // perp_dex_index 1 (after the base perp dex 0), coin index 2 in universe →
+        // 100000 + 1*10000 + 2 = 110002.
+        assert_eq!(super::builder_asset_index(1, 2), 110_002);
     }
 
     #[test]

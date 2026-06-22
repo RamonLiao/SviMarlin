@@ -1,5 +1,6 @@
 //! Hyperliquid HIP-4 venue adapter.
 
+pub mod exchange;
 pub mod info;
 pub mod signing;
 pub mod ws;
@@ -8,6 +9,7 @@ use crate::{
     ChainKind, ExtPosition, FeeModel, HealthStatus, MarketRef, OrderId, OrderReceipt, PlaceOrder,
     Quote, SettleReceipt, VenueAdapter, VenueError, VenueId,
 };
+use alloy_signer_local::PrivateKeySigner;
 use async_trait::async_trait;
 use futures::stream::BoxStream;
 use info::InfoClient;
@@ -18,14 +20,21 @@ const TESTNET_WS: &str = "wss://api.hyperliquid-testnet.xyz/ws";
 /// Latency over this (ms) downgrades health to Degraded.
 const HEALTH_LATENCY_MS: u128 = 1_500;
 
-/// Read-path adapter for Hyperliquid HIP-4 outcome markets (HyperOdd builder dex).
+/// Adapter for Hyperliquid HIP-4 outcome markets (HyperOdd builder dex).
+///
+/// Debug-safe: `signer` is `Option<PrivateKeySigner>`; alloy's `PrivateKeySigner` Debug redacts
+/// the secret (it prints only the derived address / verifying key), so deriving Debug here cannot
+/// leak `HL_TESTNET_PRIVATE_KEY`.
 #[derive(Debug, Clone)]
 pub struct HyperliquidAdapter {
     info: InfoClient,
+    exchange: exchange::ExchangeClient,
     ws_url: String,
     dex: String,
     /// User address for `position()` reads (read-only, no signing). None → position() errors.
     user: Option<String>,
+    /// Signing key (from `HL_TESTNET_PRIVATE_KEY`). None → write methods return `Unauthorized`.
+    signer: Option<PrivateKeySigner>,
     testnet: bool,
 }
 
@@ -69,14 +78,96 @@ impl HyperliquidBuilder {
         self
     }
     pub fn build(self) -> HyperliquidAdapter {
+        // Signer from env only; parse silently (a bad/missing key → None → writes Unauthorized).
+        // NEVER log the key or the parse error (the error Display can echo key material).
+        let signer = std::env::var("HL_TESTNET_PRIVATE_KEY")
+            .ok()
+            .and_then(|k| k.parse::<PrivateKeySigner>().ok());
         HyperliquidAdapter {
-            info: InfoClient::new(self.base_url),
+            info: InfoClient::new(self.base_url.clone()),
+            exchange: exchange::ExchangeClient::new(self.base_url),
             ws_url: self.ws_url,
             dex: self.dex,
             user: self.user,
+            signer,
             testnet: self.testnet,
         }
     }
+}
+
+impl HyperliquidAdapter {
+    /// Nonce for signed actions. HL requires ms-timestamp nonces within a recent window.
+    /// Task 8 replaces this with a monotonic counter; for now use wall-clock ms.
+    fn next_nonce(&self) -> u64 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0)
+    }
+}
+
+/// Parse an HL `/exchange` order response into an [`OrderReceipt`].
+///
+/// Accepts the documented shapes:
+/// - `{"status":"ok","response":{"type":"order","data":{"statuses":[{"resting":{"oid":N}}]}}}`
+/// - `{...{"filled":{"oid":N,"totalSz":"1.0","avgPx":"0.2"}}}`
+/// - top-level error: `{"status":"err","response":"<msg>"}`
+/// - per-status error: `{"error":"<msg>"}`
+///
+/// `coin` is threaded in so the receipt's `OrderId` round-trips as `"<coin>:<oid>"` (Task 6
+/// cancel needs the coin back). Any missing/garbage field → `VenueSpecific`, never a panic.
+fn parse_order_receipt(resp: &serde_json::Value, coin: &str) -> Result<OrderReceipt, VenueError> {
+    // Top-level error status.
+    if resp.get("status").and_then(|s| s.as_str()) == Some("err") {
+        let msg = resp
+            .get("response")
+            .and_then(|r| r.as_str())
+            .unwrap_or("unknown HL error");
+        return Err(VenueError::VenueSpecific(msg.to_string()));
+    }
+    let status = resp
+        .get("response")
+        .and_then(|r| r.get("data"))
+        .and_then(|d| d.get("statuses"))
+        .and_then(|s| s.as_array())
+        .and_then(|a| a.first())
+        .ok_or_else(|| {
+            VenueError::VenueSpecific(format!("unexpected /exchange response: {resp}"))
+        })?;
+
+    // Per-status error.
+    if let Some(err) = status.get("error").and_then(|e| e.as_str()) {
+        return Err(VenueError::VenueSpecific(err.to_string()));
+    }
+
+    if let Some(resting) = status.get("resting") {
+        let oid = resting
+            .get("oid")
+            .and_then(|o| o.as_u64())
+            .ok_or_else(|| VenueError::VenueSpecific("resting status missing oid".into()))?;
+        return Ok(OrderReceipt {
+            order_id: OrderId(format!("{coin}:{oid}")),
+            filled_size: 0.0,
+        });
+    }
+    if let Some(filled) = status.get("filled") {
+        let oid = filled
+            .get("oid")
+            .and_then(|o| o.as_u64())
+            .ok_or_else(|| VenueError::VenueSpecific("filled status missing oid".into()))?;
+        let total_sz = filled
+            .get("totalSz")
+            .and_then(|s| s.as_str())
+            .ok_or_else(|| VenueError::VenueSpecific("filled status missing totalSz".into()))?;
+        let filled_size = info::parse_px(total_sz)?;
+        return Ok(OrderReceipt {
+            order_id: OrderId(format!("{coin}:{oid}")),
+            filled_size,
+        });
+    }
+    Err(VenueError::VenueSpecific(format!(
+        "unrecognized order status: {status}"
+    )))
 }
 
 #[async_trait]
@@ -148,10 +239,22 @@ impl VenueAdapter for HyperliquidAdapter {
         }
     }
 
-    async fn place(&self, _order: PlaceOrder) -> Result<OrderReceipt, VenueError> {
-        Err(VenueError::VenueSpecific(
-            "place: unimplemented — HL EIP-712/msgpack signing round (TODO #6 pt2)".into(),
-        ))
+    async fn place(&self, order: PlaceOrder) -> Result<OrderReceipt, VenueError> {
+        let signer = self.signer.as_ref().ok_or(VenueError::Unauthorized)?;
+        let coin = order.market.venue_market.rsplit(':').next().unwrap_or("");
+        let asset = self.info.asset_index(&self.dex, coin).await?;
+        // HyperOdd "up" outcome = long → is_buy true.
+        let is_buy = matches!(order.side, volarb_core::Side::Up);
+        let ow = signing::order_wire(asset, is_buy, order.price, order.size, false, "Gtc")?;
+        let action = signing::OrderAction {
+            r#type: "order",
+            orders: vec![ow],
+            grouping: "na",
+        };
+        let nonce = self.next_nonce();
+        let sig = signing::sign_l1_action(signer, &action, nonce, None, !self.testnet)?;
+        let resp = self.exchange.post_action(&action, &sig, nonce).await?;
+        parse_order_receipt(&resp, coin)
     }
 
     async fn cancel(&self, _order_id: OrderId) -> Result<(), VenueError> {
@@ -192,6 +295,9 @@ mod tests {
 
     #[tokio::test]
     async fn write_methods_fail_loud() {
+        // No HL_TESTNET_PRIVATE_KEY in the test env → no signer. `place` must refuse to sign and
+        // return Unauthorized (never fabricate a fill, never hit the network). cancel is still a
+        // stub (Task 6) and settle is unimplemented → both fail loud as VenueSpecific.
         let a = HyperliquidAdapter::builder().build();
         let order = PlaceOrder {
             market: mref(),
@@ -201,7 +307,7 @@ mod tests {
         };
         assert!(matches!(
             a.place(order).await,
-            Err(VenueError::VenueSpecific(_))
+            Err(VenueError::Unauthorized)
         ));
         assert!(matches!(
             a.cancel(OrderId("x".into())).await,
@@ -209,6 +315,45 @@ mod tests {
         ));
         assert!(matches!(
             a.settle(mref()).await,
+            Err(VenueError::VenueSpecific(_))
+        ));
+    }
+
+    #[test]
+    fn parse_order_receipt_maps_all_shapes() {
+        // resting → oid in id, filled_size 0.
+        let resting = serde_json::json!({"status":"ok","response":{"type":"order",
+            "data":{"statuses":[{"resting":{"oid":123}}]}}});
+        let r = super::parse_order_receipt(&resting, "BTCHOURLY").unwrap();
+        assert_eq!(r.order_id, OrderId("BTCHOURLY:123".into()));
+        assert_eq!(r.filled_size, 0.0);
+
+        // filled → totalSz parsed.
+        let filled = serde_json::json!({"status":"ok","response":{"type":"order",
+            "data":{"statuses":[{"filled":{"oid":7,"totalSz":"1.5","avgPx":"0.2"}}]}}});
+        let r = super::parse_order_receipt(&filled, "X").unwrap();
+        assert_eq!(r.order_id, OrderId("X:7".into()));
+        assert_eq!(r.filled_size, 1.5);
+
+        // top-level err → VenueSpecific carrying the HL message.
+        let err = serde_json::json!({"status":"err","response":"insufficient margin"});
+        assert!(matches!(
+            super::parse_order_receipt(&err, "X"),
+            Err(VenueError::VenueSpecific(m)) if m == "insufficient margin"
+        ));
+
+        // per-status error → VenueSpecific.
+        let serr = serde_json::json!({"status":"ok","response":{"type":"order",
+            "data":{"statuses":[{"error":"Order rejected"}]}}});
+        assert!(matches!(
+            super::parse_order_receipt(&serr, "X"),
+            Err(VenueError::VenueSpecific(_))
+        ));
+
+        // garbage / missing fields → VenueSpecific, no panic.
+        let junk = serde_json::json!({"status":"ok","response":{}});
+        assert!(matches!(
+            super::parse_order_receipt(&junk, "X"),
             Err(VenueError::VenueSpecific(_))
         ));
     }
