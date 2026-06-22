@@ -248,16 +248,11 @@ impl VenueAdapter for HyperliquidAdapter {
         ws::quote_stream(self.ws_url.clone(), self.dex.clone())
     }
 
-    async fn position(&self, _market: MarketRef) -> Result<Option<ExtPosition>, VenueError> {
+    async fn position(&self, market: MarketRef) -> Result<Option<ExtPosition>, VenueError> {
         // Read-only clearinghouseState; no signing. Requires a user address.
-        let _user = self.user.as_ref().ok_or(VenueError::Unauthorized)?;
-        // Parsing clearinghouseState is deferred to pt2 (needs a funded account to fixture a
-        // non-empty state). Returning `Ok(None)` would lie "flat position" to the risk layer —
-        // fail loud instead (Rule 12), so a bot never trades on a fabricated empty position.
-        Err(VenueError::VenueSpecific(
-            "position: clearinghouseState parse unimplemented — HL signing round (TODO #6 pt2)"
-                .into(),
-        ))
+        let user = self.user.as_ref().ok_or(VenueError::Unauthorized)?;
+        let state = self.info.clearinghouse_state(&self.dex, user).await?;
+        info::parse_position(&state, &market)
     }
 
     async fn health(&self) -> HealthStatus {
@@ -453,13 +448,8 @@ mod tests {
         ));
     }
 
-    #[tokio::test]
-    async fn position_with_user_fails_loud_not_flat() {
-        // With a user set we still can't parse state yet — must error loud, never lie Ok(None).
-        let a = HyperliquidAdapter::builder().user("0xabc").build();
-        assert!(matches!(
-            a.position(mref()).await,
-            Err(VenueError::VenueSpecific(_))
-        ));
-    }
+    // NOTE: the pt1 `position_with_user_fails_loud_not_flat` test was removed here. position() no
+    // longer fails loud with a user set — it fetches clearinghouseState and parses it (a network
+    // call we don't make in unit tests). The parse logic is covered by `info::tests`
+    // (`parses_nonempty_position`, `flat_market_returns_none`); the no-user path stays loud above.
 }

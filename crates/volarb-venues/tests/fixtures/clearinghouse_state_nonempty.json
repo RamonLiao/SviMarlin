@@ -1,0 +1,6 @@
+{
+  "assetPositions": [
+    { "position": { "coin": "ho:BTCHOURLY", "szi": "3.0", "entryPx": "0.21", "unrealizedPnl": "0.06" } }
+  ],
+  "marginSummary": { "accountValue": "100.0" }
+}

@@ -4,6 +4,7 @@
 //! (echoes the Plan A monkey bug: NaN slips past `<= 0.0`, so guard with `is_finite()`).
 
 use crate::error::VenueError;
+use crate::{ExtPosition, MarketRef};
 use serde::Deserialize;
 
 /// One L2 book level. HL wire: `{"px":"0.23","sz":"100.0","n":2}`.
@@ -182,6 +183,80 @@ impl InfoClient {
 
         Ok(builder_asset_index(perp_dex_index, coin_index))
     }
+
+    /// Fetch raw `clearinghouseState` for `(dex, user)` (read-only, no signing).
+    pub(crate) async fn clearinghouse_state(
+        &self,
+        dex: &str,
+        user: &str,
+    ) -> Result<serde_json::Value, VenueError> {
+        self.post(serde_json::json!({
+            "type": "clearinghouseState",
+            "dex": dex,
+            "user": user,
+        }))
+        .await
+    }
+}
+
+/// Parse a `clearinghouseState` for `market`'s open position, if any.
+///
+/// Finds the `assetPositions[]` entry whose `position.coin == market.venue_market`. Absent →
+/// `Ok(None)` (genuinely flat — this is REAL venue data, so reporting flat is honest). Present →
+/// parse `szi` (sign → Side: `> 0` long/Up, `< 0` short/Down; magnitude = size), `entryPx`,
+/// `unrealizedPnl`. Malformed numbers → `VenueError::VenueSpecific`. Defensive throughout: no
+/// `.unwrap()`/indexing — missing/garbage shape never panics.
+pub(crate) fn parse_position(
+    state: &serde_json::Value,
+    market: &MarketRef,
+) -> Result<Option<ExtPosition>, VenueError> {
+    // A missing/non-array `assetPositions` is a schema break or truncated payload, NOT a flat
+    // account — fail loud (Rule 12) so risk never trades on a misread response. Only a present
+    // array with no matching coin is honest "flat".
+    let positions = state
+        .get("assetPositions")
+        .and_then(|p| p.as_array())
+        .ok_or_else(|| {
+            VenueError::VenueSpecific("clearinghouseState missing assetPositions array".into())
+        })?;
+    let pos = positions
+        .iter()
+        .filter_map(|e| e.get("position"))
+        .find(|p| p.get("coin").and_then(|c| c.as_str()) == Some(market.venue_market.as_str()));
+    let pos = match pos {
+        Some(p) => p,
+        None => return Ok(None),
+    };
+
+    let parse_field = |name: &str| -> Result<f64, VenueError> {
+        let s = pos.get(name).and_then(|v| v.as_str()).ok_or_else(|| {
+            VenueError::VenueSpecific(format!(
+                "clearinghouseState position missing field {name:?}"
+            ))
+        })?;
+        parse_px(s).map_err(|e| VenueError::VenueSpecific(e.to_string()))
+    };
+
+    let szi = parse_field("szi")?;
+    // szi == 0 is a flat slot HL may keep around — report flat, not a phantom 0-size Up position.
+    if szi == 0.0 {
+        return Ok(None);
+    }
+    let entry_px = parse_field("entryPx")?;
+    let unrealized_pnl = parse_field("unrealizedPnl")?;
+
+    let side = if szi > 0.0 {
+        volarb_core::Side::Up
+    } else {
+        volarb_core::Side::Down
+    };
+    Ok(Some(ExtPosition {
+        market: market.clone(),
+        side,
+        size: szi.abs(),
+        entry_px,
+        unrealized_pnl,
+    }))
 }
 
 /// Builder-dex asset index per HL convention.
@@ -247,6 +322,87 @@ mod tests {
         // perp_dex_index 1 (after the base perp dex 0), coin index 2 in universe →
         // 100000 + 1*10000 + 2 = 110002.
         assert_eq!(super::builder_asset_index(1, 2), 110_002);
+    }
+
+    #[test]
+    fn parses_nonempty_position() {
+        let raw = include_str!("../../tests/fixtures/clearinghouse_state_nonempty.json");
+        let v: serde_json::Value = serde_json::from_str(raw).unwrap();
+        let m = crate::MarketRef {
+            venue_market: "ho:BTCHOURLY".into(),
+            strike: volarb_core::Strike(64000.0),
+            expiry: volarb_core::Expiry { unix_ms: 1 },
+        };
+        let p = super::parse_position(&v, &m).unwrap().unwrap();
+        assert_eq!(p.size, 3.0);
+        assert_eq!(p.entry_px, 0.21);
+        assert_eq!(p.side, volarb_core::Side::Up); // szi > 0 → long/Up
+    }
+
+    #[test]
+    fn flat_market_returns_none() {
+        let v: serde_json::Value = serde_json::json!({ "assetPositions": [] });
+        let m = crate::MarketRef {
+            venue_market: "ho:BTCHOURLY".into(),
+            strike: volarb_core::Strike(1.0),
+            expiry: volarb_core::Expiry { unix_ms: 1 },
+        };
+        assert!(super::parse_position(&v, &m).unwrap().is_none());
+    }
+
+    #[test]
+    fn short_position_is_down() {
+        let v = serde_json::json!({"assetPositions":[
+            {"position":{"coin":"ho:BTCHOURLY","szi":"-2.5","entryPx":"0.3","unrealizedPnl":"-0.1"}}]});
+        let m = crate::MarketRef {
+            venue_market: "ho:BTCHOURLY".into(),
+            strike: volarb_core::Strike(1.0),
+            expiry: volarb_core::Expiry { unix_ms: 1 },
+        };
+        let p = super::parse_position(&v, &m).unwrap().unwrap();
+        assert_eq!(p.side, volarb_core::Side::Down); // szi < 0 → short/Down
+        assert_eq!(p.size, 2.5); // magnitude
+    }
+
+    #[test]
+    fn position_parser_monkey_extremes() {
+        let m = crate::MarketRef {
+            venue_market: "ho:BTCHOURLY".into(),
+            strike: volarb_core::Strike(1.0),
+            expiry: volarb_core::Expiry { unix_ms: 1 },
+        };
+        // missing assetPositions array → loud, never silent flat (Rule 12).
+        assert!(matches!(
+            super::parse_position(&serde_json::json!({}), &m),
+            Err(VenueError::VenueSpecific(_))
+        ));
+        // assetPositions not an array → loud.
+        assert!(matches!(
+            super::parse_position(&serde_json::json!({"assetPositions": 7}), &m),
+            Err(VenueError::VenueSpecific(_))
+        ));
+        // szi == 0 → flat, not a phantom 0-size Up.
+        let zero = serde_json::json!({"assetPositions":[
+            {"position":{"coin":"ho:BTCHOURLY","szi":"0.0","entryPx":"0.2","unrealizedPnl":"0.0"}}]});
+        assert!(super::parse_position(&zero, &m).unwrap().is_none());
+        // NaN/garbage szi → VenueSpecific, no panic.
+        let nan = serde_json::json!({"assetPositions":[
+            {"position":{"coin":"ho:BTCHOURLY","szi":"NaN","entryPx":"0.2","unrealizedPnl":"0.0"}}]});
+        assert!(matches!(
+            super::parse_position(&nan, &m),
+            Err(VenueError::VenueSpecific(_))
+        ));
+        // matching coin but missing entryPx field → loud, never a half-built position.
+        let missing = serde_json::json!({"assetPositions":[
+            {"position":{"coin":"ho:BTCHOURLY","szi":"1.0","unrealizedPnl":"0.0"}}]});
+        assert!(matches!(
+            super::parse_position(&missing, &m),
+            Err(VenueError::VenueSpecific(_))
+        ));
+        // different coin present → flat for our market.
+        let other = serde_json::json!({"assetPositions":[
+            {"position":{"coin":"ho:ETHHOURLY","szi":"1.0","entryPx":"0.2","unrealizedPnl":"0.0"}}]});
+        assert!(super::parse_position(&other, &m).unwrap().is_none());
     }
 
     #[test]
