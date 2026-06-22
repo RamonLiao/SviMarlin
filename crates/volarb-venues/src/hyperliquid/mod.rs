@@ -36,6 +36,8 @@ pub struct HyperliquidAdapter {
     /// Signing key (from `HL_TESTNET_PRIVATE_KEY`). None → write methods return `Unauthorized`.
     signer: Option<PrivateKeySigner>,
     testnet: bool,
+    /// Last issued nonce; shared across clones (clones MUST NOT reuse nonces → replay guard).
+    last_nonce: std::sync::Arc<std::sync::atomic::AtomicU64>,
 }
 
 /// Builder; construction is venue-specific (ADR-003 §3.6).
@@ -91,18 +93,32 @@ impl HyperliquidBuilder {
             user: self.user,
             signer,
             testnet: self.testnet,
+            last_nonce: std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)),
         }
     }
 }
 
 impl HyperliquidAdapter {
-    /// Nonce for signed actions. HL requires ms-timestamp nonces within a recent window.
-    /// Task 8 replaces this with a monotonic counter; for now use wall-clock ms.
+    /// Nonce for signed actions. HL requires ms-timestamp nonces within a recent window, and
+    /// rejects duplicate nonces. Returns a STRICTLY increasing value: `max(now_ms, last + 1)`.
+    /// Two calls in the same wall-clock ms (or concurrent calls across clones, which share the
+    /// counter) each get a distinct, greater value — replay/collision guard.
     fn next_nonce(&self) -> u64 {
-        std::time::SystemTime::now()
+        let now_ms = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_millis() as u64)
-            .unwrap_or(0)
+            .unwrap_or(0);
+        // RMW that must be globally monotonic: SeqCst on the successful store guarantees a single
+        // total order across threads/clones; Acquire on the reload observes prior stores. The
+        // closure recomputes next = max(now_ms, prev + 1) on every retry against the latest value.
+        self.last_nonce
+            .fetch_update(
+                std::sync::atomic::Ordering::SeqCst,
+                std::sync::atomic::Ordering::Acquire,
+                |prev| Some(now_ms.max(prev + 1)),
+            )
+            .map(|prev| now_ms.max(prev + 1))
+            .unwrap_or(now_ms)
     }
 }
 
@@ -333,6 +349,35 @@ mod tests {
             expiry: Expiry {
                 unix_ms: 1_781_348_700_000,
             },
+        }
+    }
+
+    #[test]
+    fn nonce_is_strictly_increasing() {
+        let a = HyperliquidAdapter::builder().build();
+        let mut last = 0u64;
+        for _ in 0..1000 {
+            let n = a.next_nonce();
+            assert!(n > last, "nonce not increasing: {n} <= {last}");
+            last = n;
+        }
+    }
+
+    #[test]
+    fn cloned_adapter_shares_nonce_counter() {
+        // Clone shares the same Arc<AtomicU64>, so interleaved calls across original
+        // and clone must still be globally strictly increasing (no nonce reuse → no replay).
+        let a = HyperliquidAdapter::builder().build();
+        let b = a.clone();
+        let mut last = 0u64;
+        for i in 0..1000 {
+            let n = if i % 2 == 0 {
+                a.next_nonce()
+            } else {
+                b.next_nonce()
+            };
+            assert!(n > last, "shared nonce not increasing: {n} <= {last}");
+            last = n;
         }
     }
 
