@@ -484,6 +484,50 @@ mod tests {
         ));
     }
 
+    #[test]
+    fn parse_receipt_cancel_survive_deep_malformed_json() {
+        // Money path (Rule 12): a malformed /exchange reply must never panic and never be
+        // mistaken for success. These shapes go beyond the `{}` junk case: wrong JSON types
+        // where a string/array/u64 is expected, and structurally-present-but-empty containers.
+        // If any of these panicked we could crash mid-trade; if any returned Ok we'd fabricate
+        // a fill/cancel we never got.
+        let cases = [
+            // top-level null
+            serde_json::Value::Null,
+            // status field is a number, not a string
+            serde_json::json!({"status": 1}),
+            // statuses is an object, not an array
+            serde_json::json!({"response":{"data":{"statuses":{"resting":{"oid":1}}}}}),
+            // statuses is an empty array → no first element
+            serde_json::json!({"response":{"data":{"statuses":[]}}}),
+            // oid is a string where u64 expected
+            serde_json::json!({"response":{"data":{"statuses":[{"resting":{"oid":"abc"}}]}}}),
+            // oid is negative (not a valid u64)
+            serde_json::json!({"response":{"data":{"statuses":[{"resting":{"oid":-1}}]}}}),
+            // filled present but totalSz is a number, not the HL wire string
+            serde_json::json!({"response":{"data":{"statuses":[{"filled":{"oid":1,"totalSz":1.5}}]}}}),
+        ];
+        for c in &cases {
+            assert!(
+                matches!(
+                    parse_order_receipt(c, "X"),
+                    Err(VenueError::VenueSpecific(_))
+                ),
+                "order receipt fabricated/panicked on {c}"
+            );
+            assert!(
+                matches!(parse_cancel_response(c), Err(VenueError::VenueSpecific(_))),
+                "cancel fabricated/panicked on {c}"
+            );
+        }
+        // A cancel "success" disguised as the wrong type (number) must NOT count as success.
+        let fake_ok = serde_json::json!({"response":{"data":{"statuses":[1]}}});
+        assert!(matches!(
+            parse_cancel_response(&fake_ok),
+            Err(VenueError::VenueSpecific(_))
+        ));
+    }
+
     #[tokio::test]
     async fn position_without_user_is_unauthorized() {
         let a = HyperliquidAdapter::builder().build();

@@ -308,6 +308,29 @@ mod tests {
     }
 
     #[test]
+    fn float_to_wire_extreme_boundaries() {
+        // Large finite values must serialize without precision loss or panic: an integral
+        // 1e15 has no fractional part so it must round-trip exactly (not error).
+        assert_eq!(float_to_wire(1e15).unwrap(), "1000000000000000");
+        assert_eq!(float_to_wire(1e16).unwrap(), "10000000000000000");
+        // Exactly the 8dp granularity boundary survives; one decade smaller is lossy → error.
+        // This is the precision contract that keeps wire size faithful to the SDK.
+        assert_eq!(float_to_wire(1e-8).unwrap(), "0.00000001");
+        assert!(float_to_wire(5e-9).is_err());
+        // Zero and negative are emitted verbatim (sign validation is a business-layer concern,
+        // not the byte-faithful signing layer) — the point is: no panic, deterministic output.
+        assert_eq!(float_to_wire(0.0).unwrap(), "0");
+        assert_eq!(float_to_wire(-5.0).unwrap(), "-5");
+        // order_wire wraps float_to_wire for both px and sz; extremes must error-or-encode,
+        // never panic, on the actual write-path constructor.
+        assert_eq!(
+            order_wire(1, true, 1e15, 0.0, false, "Gtc").unwrap().p,
+            "1000000000000000"
+        );
+        assert!(order_wire(1, true, 100.0, 5e-9, false, "Gtc").is_err());
+    }
+
+    #[test]
     fn nonce_big_endian_changes_hash() {
         let ow = order_wire(1, true, 100.0, 100.0, false, "Gtc").unwrap();
         let act = OrderAction {
