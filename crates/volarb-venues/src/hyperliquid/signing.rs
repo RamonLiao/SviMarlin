@@ -44,7 +44,57 @@ pub(crate) fn float_to_int_for_hashing(x: f64) -> Result<i64, VenueError> {
 }
 
 use alloy_primitives::{B256, keccak256};
+use alloy_signer::SignerSync;
+use alloy_signer_local::PrivateKeySigner;
+use alloy_sol_types::{SolStruct, eip712_domain, sol};
 use serde::Serialize;
+
+sol! {
+    #[derive(Serialize)]
+    struct Agent {
+        string source;
+        bytes32 connectionId;
+    }
+}
+
+#[derive(Serialize)]
+#[allow(dead_code)]
+pub(crate) struct Signature {
+    pub r: String,
+    pub s: String,
+    pub v: u64,
+}
+
+/// SDK `sign_l1_action`: action_hash → phantom agent → EIP-712 (Exchange/1/1337) → {r,s,v}.
+#[allow(dead_code)]
+pub(crate) fn sign_l1_action<T: Serialize>(
+    signer: &PrivateKeySigner,
+    action: &T,
+    nonce: u64,
+    vault: Option<[u8; 20]>,
+    is_mainnet: bool,
+) -> Result<Signature, VenueError> {
+    let connection_id = action_hash(action, nonce, vault)?;
+    let agent = Agent {
+        source: if is_mainnet { "a" } else { "b" }.to_string(),
+        connectionId: connection_id,
+    };
+    let domain = eip712_domain! {
+        name: "Exchange",
+        version: "1",
+        chain_id: 1337,
+        verifying_contract: alloy_primitives::Address::ZERO,
+    };
+    let signing_hash = agent.eip712_signing_hash(&domain);
+    let sig = signer
+        .sign_hash_sync(&signing_hash)
+        .map_err(|e| VenueError::VenueSpecific(format!("sign: {e}")))?;
+    Ok(Signature {
+        r: format!("0x{:x}", sig.r()),
+        s: format!("0x{:x}", sig.s()),
+        v: 27 + sig.v() as u64,
+    })
+}
 
 #[derive(Serialize)]
 pub(crate) struct LimitType<'a> {
@@ -127,6 +177,75 @@ pub(crate) fn action_hash<T: Serialize>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloy_signer_local::PrivateKeySigner;
+
+    const TEST_KEY: &str = "0x0123456789012345678901234567890123456789012345678901234567890123";
+
+    #[derive(serde::Serialize)]
+    struct Dummy<'a> {
+        r#type: &'a str,
+        num: u64,
+    }
+
+    #[test]
+    fn sign_dummy_matches_sdk_vector() {
+        let signer: PrivateKeySigner = TEST_KEY.parse().unwrap();
+        let action = Dummy {
+            r#type: "dummy",
+            num: float_to_int_for_hashing(1000.0).unwrap() as u64,
+        };
+        let m = sign_l1_action(&signer, &action, 0, None, true).unwrap();
+        assert_eq!(
+            m.r,
+            "0x53749d5b30552aeb2fca34b530185976545bb22d0b3ce6f62e31be961a59298"
+        );
+        assert_eq!(
+            m.s,
+            "0x755c40ba9bf05223521753995abb2f73ab3229be8ec921f350cb447e384d8ed8"
+        );
+        assert_eq!(m.v, 27);
+        let t = sign_l1_action(&signer, &action, 0, None, false).unwrap();
+        assert_eq!(
+            t.r,
+            "0x542af61ef1f429707e3c76c5293c80d01f74ef853e34b76efffcb57e574f9510"
+        );
+        assert_eq!(
+            t.s,
+            "0x17b8b32f086e8cdede991f1e2c529f5dd5297cbe8128500e00cbaf766204a613"
+        );
+        assert_eq!(t.v, 28);
+    }
+
+    #[test]
+    fn sign_order_matches_sdk_vector() {
+        let signer: PrivateKeySigner = TEST_KEY.parse().unwrap();
+        let ow = order_wire(1, true, 100.0, 100.0, false, "Gtc").unwrap();
+        let action = OrderAction {
+            r#type: "order",
+            orders: vec![ow],
+            grouping: "na",
+        };
+        let m = sign_l1_action(&signer, &action, 0, None, true).unwrap();
+        assert_eq!(
+            m.r,
+            "0xd65369825a9df5d80099e513cce430311d7d26ddf477f5b3a33d2806b100d78e"
+        );
+        assert_eq!(
+            m.s,
+            "0x2b54116ff64054968aa237c20ca9ff68000f977c93289157748a3162b6ea940e"
+        );
+        assert_eq!(m.v, 28);
+        let t = sign_l1_action(&signer, &action, 0, None, false).unwrap();
+        assert_eq!(
+            t.r,
+            "0x82b2ba28e76b3d761093aaded1b1cdad4960b3af30212b343fb2e6cdfa4e3d54"
+        );
+        assert_eq!(
+            t.s,
+            "0x6b53878fc99d26047f4d7e8c90eb98955a109f44209163f52d8dc4278cbbd9f5"
+        );
+        assert_eq!(t.v, 27);
+    }
 
     #[test]
     fn connection_id_matches_sdk_vector() {
