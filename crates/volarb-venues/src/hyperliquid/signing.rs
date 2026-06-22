@@ -278,4 +278,45 @@ mod tests {
         assert_eq!(float_to_int_for_hashing(1.033).unwrap(), 103_300_000);
         assert!(float_to_int_for_hashing(0.000012312312).is_err());
     }
+
+    #[test]
+    fn msgpack_is_deterministic() {
+        let a1 = order_wire(1, true, 100.0, 100.0, false, "Gtc").unwrap();
+        let a2 = order_wire(1, true, 100.0, 100.0, false, "Gtc").unwrap();
+        let act1 = OrderAction {
+            r#type: "order",
+            orders: vec![a1],
+            grouping: "na",
+        };
+        let act2 = OrderAction {
+            r#type: "order",
+            orders: vec![a2],
+            grouping: "na",
+        };
+        assert_eq!(
+            rmp_serde::to_vec_named(&act1).unwrap(),
+            rmp_serde::to_vec_named(&act2).unwrap()
+        );
+    }
+
+    #[test]
+    fn non_finite_and_lossy_inputs_error_not_panic() {
+        assert!(order_wire(1, true, f64::NAN, 1.0, false, "Gtc").is_err());
+        assert!(order_wire(1, true, f64::INFINITY, 1.0, false, "Gtc").is_err());
+        // sub-1e-8 size loses precision in float_to_wire → error.
+        assert!(order_wire(1, true, 100.0, 0.000000001, false, "Gtc").is_err());
+    }
+
+    #[test]
+    fn nonce_big_endian_changes_hash() {
+        let ow = order_wire(1, true, 100.0, 100.0, false, "Gtc").unwrap();
+        let act = OrderAction {
+            r#type: "order",
+            orders: vec![ow],
+            grouping: "na",
+        };
+        let h0 = action_hash(&act, 0, None).unwrap();
+        let h1 = action_hash(&act, 1, None).unwrap();
+        assert_ne!(h0, h1);
+    }
 }
