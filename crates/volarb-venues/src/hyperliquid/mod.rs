@@ -170,6 +170,47 @@ fn parse_order_receipt(resp: &serde_json::Value, coin: &str) -> Result<OrderRece
     )))
 }
 
+/// Parse an HL `/exchange` cancel response into `Ok(())` or a loud error.
+///
+/// Accepts the documented shapes:
+/// - success: `{"status":"ok","response":{"type":"cancel","data":{"statuses":["success"]}}}`
+/// - per-status error: `{...statuses":[{"error":"<msg>"}]}`
+/// - top-level error: `{"status":"err","response":"<msg>"}`
+///
+/// Money-path (Rule 12): never fabricate success from an error/garbage response. Any
+/// missing/unexpected field → `VenueSpecific`, never a panic (no `.unwrap()`/indexing).
+fn parse_cancel_response(resp: &serde_json::Value) -> Result<(), VenueError> {
+    // Top-level error status.
+    if resp.get("status").and_then(|s| s.as_str()) == Some("err") {
+        let msg = resp
+            .get("response")
+            .and_then(|r| r.as_str())
+            .unwrap_or("unknown HL error");
+        return Err(VenueError::VenueSpecific(msg.to_string()));
+    }
+    let status = resp
+        .get("response")
+        .and_then(|r| r.get("data"))
+        .and_then(|d| d.get("statuses"))
+        .and_then(|s| s.as_array())
+        .and_then(|a| a.first())
+        .ok_or_else(|| {
+            VenueError::VenueSpecific(format!("unexpected /exchange cancel response: {resp}"))
+        })?;
+
+    // Per-status object error: {"error":"<msg>"}.
+    if let Some(err) = status.get("error").and_then(|e| e.as_str()) {
+        return Err(VenueError::VenueSpecific(err.to_string()));
+    }
+    // Success is the bare string "success".
+    if status.as_str() == Some("success") {
+        return Ok(());
+    }
+    Err(VenueError::VenueSpecific(format!(
+        "unrecognized cancel status: {status}"
+    )))
+}
+
 #[async_trait]
 impl VenueAdapter for HyperliquidAdapter {
     fn id(&self) -> VenueId {
@@ -257,10 +298,24 @@ impl VenueAdapter for HyperliquidAdapter {
         parse_order_receipt(&resp, coin)
     }
 
-    async fn cancel(&self, _order_id: OrderId) -> Result<(), VenueError> {
-        Err(VenueError::VenueSpecific(
-            "cancel: unimplemented — HL signing round (TODO #6 pt2)".into(),
-        ))
+    async fn cancel(&self, order_id: OrderId) -> Result<(), VenueError> {
+        let signer = self.signer.as_ref().ok_or(VenueError::Unauthorized)?;
+        let (coin, oid_str) = order_id
+            .0
+            .split_once(':')
+            .ok_or_else(|| VenueError::VenueSpecific("OrderId must be '<coin>:<oid>'".into()))?;
+        let oid: u64 = oid_str
+            .parse()
+            .map_err(|_| VenueError::VenueSpecific("OrderId oid not numeric".into()))?;
+        let asset = self.info.asset_index(&self.dex, coin).await?;
+        let action = signing::CancelAction {
+            r#type: "cancel",
+            cancels: vec![signing::CancelWire { a: asset, o: oid }],
+        };
+        let nonce = self.next_nonce();
+        let sig = signing::sign_l1_action(signer, &action, nonce, None, !self.testnet)?;
+        let resp = self.exchange.post_action(&action, &sig, nonce).await?;
+        parse_cancel_response(&resp)
     }
 
     async fn settle(&self, _market: MarketRef) -> Result<SettleReceipt, VenueError> {
@@ -294,27 +349,58 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn write_methods_fail_loud() {
-        // No HL_TESTNET_PRIVATE_KEY in the test env → no signer. `place` must refuse to sign and
-        // return Unauthorized (never fabricate a fill, never hit the network). cancel is still a
-        // stub (Task 6) and settle is unimplemented → both fail loud as VenueSpecific.
+    async fn settle_fails_loud_place_cancel_need_signer() {
+        // No HL_TESTNET_PRIVATE_KEY in the test env → no signer. `place` and `cancel` both sign,
+        // so without a key they return Unauthorized (never fabricate, never hit the network). Only
+        // settle is still unimplemented → fails loud as VenueSpecific.
         let a = HyperliquidAdapter::builder().build();
-        let order = PlaceOrder {
-            market: mref(),
-            side: Side::Up,
-            price: 0.2,
-            size: 1.0,
-        };
         assert!(matches!(
-            a.place(order).await,
-            Err(VenueError::Unauthorized)
-        ));
-        assert!(matches!(
-            a.cancel(OrderId("x".into())).await,
+            a.settle(mref()).await,
             Err(VenueError::VenueSpecific(_))
         ));
         assert!(matches!(
-            a.settle(mref()).await,
+            a.place(PlaceOrder {
+                market: mref(),
+                side: Side::Up,
+                price: 0.2,
+                size: 1.0
+            })
+            .await,
+            Err(VenueError::Unauthorized)
+        ));
+        assert!(matches!(
+            a.cancel(OrderId("123".into())).await,
+            Err(VenueError::Unauthorized)
+        ));
+    }
+
+    #[test]
+    fn parse_cancel_response_maps_all_shapes() {
+        // ok + success → Ok(()).
+        let ok = serde_json::json!({"status":"ok","response":{"type":"cancel",
+            "data":{"statuses":["success"]}}});
+        assert!(super::parse_cancel_response(&ok).is_ok());
+
+        // per-status object error → VenueSpecific carrying the message.
+        let serr = serde_json::json!({"status":"ok","response":{"type":"cancel",
+            "data":{"statuses":[{"error":"Order was never placed, already canceled, or filled"}]}}});
+        assert!(matches!(
+            super::parse_cancel_response(&serr),
+            Err(VenueError::VenueSpecific(m))
+                if m == "Order was never placed, already canceled, or filled"
+        ));
+
+        // top-level err → VenueSpecific carrying the HL message.
+        let terr = serde_json::json!({"status":"err","response":"Must deposit before trading"});
+        assert!(matches!(
+            super::parse_cancel_response(&terr),
+            Err(VenueError::VenueSpecific(m)) if m == "Must deposit before trading"
+        ));
+
+        // garbage / missing fields → VenueSpecific, no panic.
+        let junk = serde_json::json!({"status":"ok","response":{}});
+        assert!(matches!(
+            super::parse_cancel_response(&junk),
             Err(VenueError::VenueSpecific(_))
         ));
     }
